@@ -10,6 +10,8 @@ providers (PostgreSQL and SQL Server), and a CLI.
 
 ## Quick start
 
+Requires the .NET 10 SDK.
+
 ```bash
 dotnet build
 
