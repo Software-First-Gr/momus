@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{9E44BFFB-4E02-47F0-A81B-4D4DD32C932C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Momus.Cli", "src\Momus.Cli\Momus.Cli.csproj", "{3004BA99-194A-4F53-B17E-78E773C58DB5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Momus.Core", "src\Momus.Core\Momus.Core.csproj", "{ADD3952F-3758-4500-925C-9EA544932332}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Momus.Postgres", "src\Momus.Postgres\Momus.Postgres.csproj", "{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Momus.SqlServer", "src\Momus.SqlServer\Momus.SqlServer.csproj", "{CFC277C5-CF25-4C41-BE83-6468C5534634}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{CCFB8B23-CA4F-48D6-8696-58CE82A2D21C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Momus.Tests", "tests\Momus.Tests\Momus.Tests.csproj", "{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3004BA99-194A-4F53-B17E-78E773C58DB5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3004BA99-194A-4F53-B17E-78E773C58DB5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3004BA99-194A-4F53-B17E-78E773C58DB5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3004BA99-194A-4F53-B17E-78E773C58DB5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ADD3952F-3758-4500-925C-9EA544932332}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ADD3952F-3758-4500-925C-9EA544932332}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ADD3952F-3758-4500-925C-9EA544932332}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ADD3952F-3758-4500-925C-9EA544932332}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CFC277C5-CF25-4C41-BE83-6468C5534634}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFC277C5-CF25-4C41-BE83-6468C5534634}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFC277C5-CF25-4C41-BE83-6468C5534634}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFC277C5-CF25-4C41-BE83-6468C5534634}.Release|Any CPU.Build.0 = Release|Any CPU
+		{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3004BA99-194A-4F53-B17E-78E773C58DB5} = {9E44BFFB-4E02-47F0-A81B-4D4DD32C932C}
+		{ADD3952F-3758-4500-925C-9EA544932332} = {9E44BFFB-4E02-47F0-A81B-4D4DD32C932C}
+		{ADD5C19F-E5BC-40EF-A12D-6A3EFAF535F3} = {9E44BFFB-4E02-47F0-A81B-4D4DD32C932C}
+		{CFC277C5-CF25-4C41-BE83-6468C5534634} = {9E44BFFB-4E02-47F0-A81B-4D4DD32C932C}
+		{44861FC2-A314-4FED-BDBF-58DB0DBAA2FB} = {CCFB8B23-CA4F-48D6-8696-58CE82A2D21C}
+	EndGlobalSection
+EndGlobal

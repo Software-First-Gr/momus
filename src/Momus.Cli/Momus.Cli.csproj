@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
+    <ProjectReference Include="..\Momus.Postgres\Momus.Postgres.csproj" />
+    <ProjectReference Include="..\Momus.SqlServer\Momus.SqlServer.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
