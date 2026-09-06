@@ -1,9 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package">
+    <PackageId>Momus.Core</PackageId>
+    <Description>Momus collector core: the scan engine, the diagnostic-check contract and the Finding model. Point Momus at a database and it tells you what is wrong, as structured, prioritized findings. Providers: Momus.Postgres, Momus.SqlServer. CLI: Momus.</Description>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
 </Project>

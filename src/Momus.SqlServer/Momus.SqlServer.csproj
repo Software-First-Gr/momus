@@ -1,9 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package">
+    <PackageId>Momus.SqlServer</PackageId>
+    <Description>SQL Server provider for Momus. Read-only diagnostic checks over the DMVs: dominant wait types with benign waits filtered, optimizer-suggested missing indexes, top queries by CPU, live blocking chains, buffer-pool pressure.</Description>
+    <PackageTags>$(PackageTags);mssql;dmv;wait-stats</PackageTags>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
   <ItemGroup>

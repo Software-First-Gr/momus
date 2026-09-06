@@ -2,6 +2,8 @@
 
 > Named after the Greek god of criticism. Point it at a database; it tells you what's wrong.
 
+**Status:** pre-release (`0.1.0-preview`). The collector core and CLI work today; the API and package layout may change until 1.0.
+
 Momus is an AI-era DBA/SRE collector: it connects to your database, runs a suite of
 diagnostic checks against the engine's own statistics views, and produces structured,
 prioritized findings — the raw material for "two consultants at once" (DBA + SRE) aimed

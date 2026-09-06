@@ -1,9 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package">
+    <PackageId>Momus.Postgres</PackageId>
+    <Description>PostgreSQL provider for Momus. Read-only diagnostic checks over the pg_stat views: buffer cache hit ratio, connection saturation, tables dominated by sequential scans, unused indexes, dead-tuple and vacuum debt, idle-in-transaction and long-running sessions, top queries by cumulative cost via pg_stat_statements.</Description>
+    <PackageTags>$(PackageTags);npgsql;pg_stat_statements</PackageTags>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
   <ItemGroup>
