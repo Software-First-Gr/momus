@@ -32,6 +32,7 @@ The design behind all of this is `docs/DESIGN.md`.
 | D8 | 2026-09-06 | Registry: GHCR (`ghcr.io/software-first-gr/momus`), `edge` from `develop`, semver + `latest` from tags, linux/amd64 + linux/arm64. Docker Hub `momus` namespace is taken; a mirror is optional later. |
 | D9 | 2026-09-06 | Repo public since 2026-09-06. Quiet until M1 runs end to end; launch post after M4. |
 | D10 | 2026-09-06 | Money: free tier never gates checks, insights, MCP or CLI. Pro (self-hosted, offline license key, per server) gates retention, multiple apps/targets, alerts, login, white-label report. Billing is built only after strangers use the free tier daily (M5, not before). |
+| D11 | 2026-09-06 | Package ids stay product-first: `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer`, later `Momus.Client`. No `SoftwareFirst.` prefix, unlike `SoftwareFirst.Switchboard` (where the bare id was free and prefixing was a choice). Momus is a product, not a company utility: it owns a CLI command (`dotnet tool install -g Momus` -> `momus`, an id/command split a prefix would force), a Docker image and a multi-package family where `SoftwareFirst.Momus.Client.Switchboard` is a cost Switchboard never paid. Namespace protection comes from an ID prefix reservation instead, not from the id. |
 
 ## Open questions
 
@@ -46,7 +47,8 @@ The design behind all of this is `docs/DESIGN.md`.
 - [ ] Decide branch policy (see Open questions) and apply it.
 - [ ] Add CI and NuGet badges to `README.md` like Switchboard's.
 - [ ] Decide D3 (license of the executable).
-- [ ] Optional: send the ID prefix reservation email to account@nuget.org (owner `nifragos`, prefixes `Momus.` and exact id `Momus`, link to the repo). Gives the verified badge and blocks strangers from publishing `Momus.*`.
+- [ ] Add an embedded `PackageIcon` to `Directory.Build.props` (Switchboard has one since `6828783`). NuGet lists it as a best practice reviewers check for prefix reservation.
+- [ ] At the M1 release, once the packages carry real content, mail `account@nuget.org` from owner `nifragos` requesting **both** reservations in one application: `Momus.` (the prefix and the exact id `Momus`) and `SoftwareFirst.` (covers `SoftwareFirst.Switchboard`), with a link to the repo. Gives the verified badge and blocks strangers from publishing `Momus.*`. `SoftwareFirst.` is a near-certain grant, matching the author and org metadata; `Momus.` is a maybe, since the criteria say to avoid common or generic words and Momus is a dictionary word - so asking for both costs nothing. See D11.
 
 ---
 
