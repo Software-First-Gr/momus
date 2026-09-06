@@ -2,7 +2,7 @@
 
   <!-- One version for every package; CI overrides it from the git tag (v1.2.3 -> 1.2.3). -->
   <PropertyGroup>
-    <Version>0.1.0-preview.1</Version>
+    <Version>0.0.1</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -19,7 +19,7 @@
     <RepositoryUrl>https://github.com/Software-First-Gr/momus</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>database;diagnostics;dba;sre;performance;health-check;postgres;postgresql;sqlserver</PackageTags>
+    <PackageTags>momus</PackageTags>
   </PropertyGroup>
 
   <PropertyGroup Label="Build quality">

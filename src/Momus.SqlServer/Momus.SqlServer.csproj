@@ -6,8 +6,7 @@
 
   <PropertyGroup Label="Package">
     <PackageId>Momus.SqlServer</PackageId>
-    <Description>SQL Server provider for Momus. Read-only diagnostic checks over the DMVs: dominant wait types with benign waits filtered, optimizer-suggested missing indexes, top queries by CPU, live blocking chains, buffer-pool pressure.</Description>
-    <PackageTags>$(PackageTags);mssql;dmv;wait-stats</PackageTags>
+    <Description>Momus SQL Server provider. Pre-release; documentation will follow with the first stable release.</Description>
     <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 

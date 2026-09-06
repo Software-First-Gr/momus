@@ -6,7 +6,7 @@
 
   <PropertyGroup Label="Package">
     <PackageId>Momus.Core</PackageId>
-    <Description>Momus collector core: the scan engine, the diagnostic-check contract and the Finding model. Point Momus at a database and it tells you what is wrong, as structured, prioritized findings. Providers: Momus.Postgres, Momus.SqlServer. CLI: Momus.</Description>
+    <Description>Momus core library. Pre-release; documentation will follow with the first stable release.</Description>
     <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 

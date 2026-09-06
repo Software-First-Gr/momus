@@ -11,8 +11,7 @@
     <PackageId>Momus</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>momus</ToolCommandName>
-    <Description>Momus command line. `momus scan` connects to PostgreSQL or SQL Server, runs read-only diagnostic checks against the engine's own statistics views and prints prioritized findings with evidence. Exit code 3 on High or Critical findings, for CI. JSON export for downstream and AI consumption.</Description>
-    <PackageTags>$(PackageTags);cli;dotnet-tool</PackageTags>
+    <Description>Momus command line tool. Pre-release; documentation will follow with the first stable release.</Description>
   </PropertyGroup>
 
   <ItemGroup>
