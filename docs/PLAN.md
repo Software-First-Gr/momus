@@ -112,6 +112,7 @@ dates and staleness all need a database under real, changing load.
 ### M1.7 Release
 
 - [ ] Restore descriptive package metadata is already in the repo; verify nuget.org listing after publish.
+- [ ] Note in the README that the `Momus` tool now runs on the ASP.NET Core shared framework, because the binary contains the server. Verified working: packed 0.0.1, installed with `dotnet tool install --tool-path`, both `scan` and `serve` run — the .NET SDK ships that framework, and installing a dotnet tool requires the SDK. It only matters for a machine with the runtime but not the SDK.
 - [ ] Decide D3 and set the license expression for the `Momus` tool accordingly.
 - [ ] Tag `v0.1.0`. Verify packages and image.
 
