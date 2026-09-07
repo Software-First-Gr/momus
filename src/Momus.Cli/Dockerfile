@@ -29,7 +29,8 @@ COPY --from=build /app ./
 # The SQLite file lives on the volume; everything else in the container is disposable.
 ENV MOMUS_DATA=/data \
     MOMUS_PORT=4848 \
-    DOTNET_RUNNING_IN_CONTAINER=true
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    ASPNETCORE_HTTP_PORTS="" 
 VOLUME /data
 EXPOSE 4848
 

@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,11 @@ public static class MomusServer
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
         builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning);
 
+        // The key ring signs antiforgery tokens and nothing else, and it lives on the same volume
+        // as the connection strings — which DESIGN.md already names as the trust boundary. The
+        // "no XML encryptor configured" warning on Linux is not something a user can act on.
+        builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error);
+
         var store = new MomusStore(options.DatabasePath);
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(store);
@@ -37,6 +43,12 @@ public static class MomusServer
         builder.Services.AddSingleton<ScanScheduler>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
         builder.Services.AddRazorPages().AddApplicationPart(typeof(MomusServer).Assembly);
+
+        // Antiforgery needs a key ring. Keeping it on the volume means the Settings form still
+        // works after a restart, and it silences two warnings that suggest a problem there isn't.
+        builder.Services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(options.DataDirectory, "keys")))
+            .SetApplicationName("Momus");
 
         var app = builder.Build();
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Momus");

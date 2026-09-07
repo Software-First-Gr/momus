@@ -9,6 +9,19 @@ var connectionString = builder.Configuration.GetConnectionString("Shop")
                        ?? "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=shop;Maximum Pool Size=20";
 builder.Configuration["ConnectionStrings:Shop"] = connectionString;
 
+// The traffic generator calls this app over HTTP, so request logging is two lines per
+// request of noise. What is worth reading is the scenario log in the UI.
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http", LogLevel.Warning);
+
+// Every statement EF sends, printed. Genuinely interesting for about a minute — it is how you
+// watch the N+1 happen — and unreadable after that, so it is off unless you ask:
+//   docker compose run -e ShowSql=true shop
+if (builder.Configuration["ShowSql"] != "true")
+{
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+}
+
 builder.Services.AddDbContext<ShopDb>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHttpClient("self");
 builder.Services.AddSingleton<Telemetry>();
