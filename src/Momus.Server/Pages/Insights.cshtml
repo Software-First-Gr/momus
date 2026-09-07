@@ -1,0 +1,116 @@
+@page
+@model InsightsModel
+@{
+    ViewData["Title"] = "Momus — insights";
+    ViewData["Tab"] = "insights";
+    ViewData["HeaderStatus"] = Model.HeaderStatus;
+}
+
+@if (Model.Selected is null)
+{
+    <section>
+        <h1>Nothing to think about yet</h1>
+        <p class="lede">
+            Insights are what the database's side and your application's side mean together, so
+            there has to be a database first. <a href="/settings">Add one</a>, or start Momus with
+            <code>--target</code>.
+        </p>
+    </section>
+}
+else
+{
+    <section>
+        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+            <div>
+                <h1>Insights</h1>
+                <p class="lede" style="margin:0">
+                    @Model.Selected.Name · worst first. Ranking by traffic and recency arrives with
+                    the "Fix first" cards.
+                </p>
+            </div>
+            <div class="grow" style="flex:1"></div>
+
+            @if (Model.Targets.Count > 1)
+            {
+                <form method="get" style="display:flex;gap:8px;align-items:center">
+                    <select name="target" onchange="this.form.submit()" style="width:auto">
+                        @foreach (var target in Model.Targets)
+                        {
+                            <option value="@target.Id" selected="@(target.Id == Model.Selected.Id)">@target.Name</option>
+                        }
+                    </select>
+                </form>
+            }
+        </div>
+
+        <p style="margin:14px 0 0">
+            @foreach (var severity in new[] { Severity.Critical, Severity.High, Severity.Medium, Severity.Low, Severity.Info })
+            {
+                var count = Model.Count(severity);
+                if (count > 0)
+                {
+                    <span class="pill @Humanize.Css(severity)" style="margin-right:8px">@Humanize.Label(severity) @count</span>
+                }
+            }
+            @if (Model.Insights.Count == 0)
+            {
+                <span class="pill ok">NOTHING TO REPORT</span>
+            }
+        </p>
+
+        @if (!Model.AnyAppReported)
+        {
+            <p class="small muted" style="margin:12px 0 0">
+                No application is reporting, so every insight below comes from the database alone.
+                The ones that need both halves — an N+1, or a hot query mapped to a line of code —
+                cannot fire until one does. <a href="/queries">Three lines to fix that.</a>
+            </p>
+        }
+        else if (Model.JoinedCount == 0)
+        {
+            <p class="small muted" style="margin:12px 0 0">
+                An application is reporting and nothing joined yet: either the app has not run the
+                statements the database ranks, or it has only just started. Give it a few minutes of
+                traffic.
+            </p>
+        }
+    </section>
+
+    @foreach (var insight in Model.Insights)
+    {
+        <section>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+                <span class="pill @Humanize.Css(insight.Severity)">@Humanize.Label(insight.Severity)</span>
+                <span class="chip">@Model.Label(insight.Kind)</span>
+                <strong style="font-size:14.5px">@insight.Title</strong>
+                @if (insight.IsNew)
+                {
+                    <span class="pill new">NEW</span>
+                }
+            </div>
+
+            <p class="small" style="margin:10px 0 6px">@insight.Detail</p>
+
+            @if (insight.Recommendation is not null)
+            {
+                <p class="small muted" style="margin:0 0 8px">→ @insight.Recommendation</p>
+            }
+
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span class="chip" title="@insight.FirstSeen.ToString("u")">@Humanize.Since(insight.FirstSeen)</span>
+                @foreach (var subject in insight.Subjects)
+                {
+                    <span class="chip">@subject</span>
+                }
+            </div>
+
+            @if (insight.EvidenceJson is not "{}" and not "")
+            {
+                <details style="margin-top:8px">
+                    <summary class="small muted" style="cursor:pointer">Evidence</summary>
+                    <pre>@insight.EvidenceJson</pre>
+                </details>
+            }
+        </section>
+    }
+}

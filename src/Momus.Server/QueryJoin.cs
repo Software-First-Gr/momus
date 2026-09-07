@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Momus.Core;
-using Momus.Server.Store;
+using Momus.Core.Insights;
 
 namespace Momus.Server;
 
@@ -37,7 +37,7 @@ public sealed record DatabaseView
 public sealed record QueryRow
 {
     public required string Fingerprint { get; init; }
-    public AppQueryStat? App { get; init; }
+    public QueryStatView? App { get; init; }
     public DatabaseView? Database { get; init; }
 
     /// <summary>Whichever side has text for it; the app's is preferred because it is the app's shape.</summary>
@@ -60,7 +60,7 @@ public static class QueryJoin
     /// the app's own time: the real ranking, which weighs traffic and recency, arrives in M3.
     /// </summary>
     public static IReadOnlyList<QueryRow> Build(
-        IReadOnlyList<AppQueryStat> app, IReadOnlyList<StoredFinding> findings, string targetId)
+        IReadOnlyList<QueryStatView> app, IReadOnlyList<FindingView> findings, string targetId)
     {
         var database = FromFindings(findings);
 
@@ -83,13 +83,13 @@ public static class QueryJoin
 
         return rows
             .OrderByDescending(r => (int)r.Severity)
-            .ThenByDescending(r => r.App?.DurationSum ?? 0)
+            .ThenByDescending(r => r.App?.TotalMs ?? 0)
             .ThenByDescending(r => r.Database?.TotalMs ?? 0)
             .ToList();
     }
 
     /// <summary>The newest scan's findings that carry a <c>query:</c> subject, keyed by fingerprint.</summary>
-    public static IReadOnlyDictionary<string, DatabaseView> FromFindings(IReadOnlyList<StoredFinding> findings)
+    public static IReadOnlyDictionary<string, DatabaseView> FromFindings(IReadOnlyList<FindingView> findings)
     {
         var views = new Dictionary<string, DatabaseView>(StringComparer.Ordinal);
 
@@ -110,7 +110,7 @@ public static class QueryJoin
         return views;
     }
 
-    private static DatabaseView ViewOf(StoredFinding finding)
+    private static DatabaseView ViewOf(FindingView finding)
     {
         using var evidence = Parse(finding.EvidenceJson);
         var root = evidence?.RootElement;

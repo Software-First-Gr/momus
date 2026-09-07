@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Momus.Core.Ingest;
+using Momus.Server.Insights;
 using Momus.Server.Store;
 
 namespace Momus.Server;
@@ -24,6 +25,14 @@ public static class MomusServer
 
     public static async Task<int> RunAsync(ServerOptions options, CancellationToken ct = default)
     {
+        // The UI, the insight text and the evidence packs are English, and their numbers should
+        // read as English wherever the server runs. Without this, a machine with a Greek locale
+        // renders "2.543 times a minute at 0,2 ms" inside an English sentence.
+        System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
+            System.Globalization.CultureInfo.InvariantCulture;
+        System.Globalization.CultureInfo.DefaultThreadCurrentUICulture =
+            System.Globalization.CultureInfo.InvariantCulture;
+
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls($"http://0.0.0.0:{options.Port}");
         builder.Logging.AddSimpleConsole(c => { c.SingleLine = true; c.TimestampFormat = "HH:mm:ss "; });
@@ -44,7 +53,9 @@ public static class MomusServer
         builder.Services.AddSingleton<ScanScheduler>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
         builder.Services.AddSingleton<IngestHandler>();
+        builder.Services.AddSingleton<InsightEngine>();
         builder.Services.AddHostedService<RetentionService>();
+        builder.Services.AddHostedService<InsightService>();
         builder.Services.AddRazorPages().AddApplicationPart(typeof(MomusServer).Assembly);
 
         // Antiforgery needs a key ring. Keeping it on the volume means the Settings form still

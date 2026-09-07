@@ -209,7 +209,7 @@ else
                     <tr>
                         <td>
                             @operation.Name
-                            @if (operation.Kind != "http")
+                            @if (operation.Kind != IngestOperation.Http)
                             {
                                 <span class="chip" style="margin-left:6px">@operation.Kind</span>
                             }
@@ -217,7 +217,7 @@ else
                         <td style="text-align:right">@operation.Calls.ToString("N0")</td>
                         <td style="text-align:right">@($"{operation.MeanMs:N0} ms")</td>
                         <td style="text-align:right">@($"{operation.MeanQueries:N1}")</td>
-                        <td style="text-align:right">@operation.QueryMax.ToString("N0")</td>
+                        <td style="text-align:right">@operation.MaxQueries.ToString("N0")</td>
                         <td style="text-align:right">@($"{operation.DbShare:P0}")</td>
                     </tr>
                 }

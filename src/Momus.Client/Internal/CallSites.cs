@@ -8,6 +8,14 @@ namespace Momus.Client.Internal;
 /// is seen in a given operation and then cached forever, so the cost is bounded by how many
 /// distinct call sites the application has, not by how much traffic it serves.
 /// </summary>
+/// <remarks>
+/// It only works because <see cref="MomusCommandInterceptor"/> calls it from the *executing*
+/// callbacks. Measured on EF Core 10 against Npgsql: at <c>ReaderExecutedAsync</c> the physical
+/// stack is <c>RelationalCommand.MoveNext</c> over <c>AsyncStateMachineBox</c> over
+/// <c>ExecutionContext.RunInternal</c> and nothing else — every application frame is a logical
+/// continuation by then, so the walk finds the framework and stops. Before execution the caller
+/// is still there, about a dozen frames up.
+/// </remarks>
 internal static class CallSites
 {
     /// <summary>An application with more distinct call sites than this has bigger problems.</summary>

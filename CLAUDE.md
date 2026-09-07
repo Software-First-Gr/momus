@@ -33,11 +33,13 @@ findings appear on their own. `docker compose down -v` resets both databases.
 
 ```
 src/Momus.Core        engine + models: IDiagnosticCheck, IScanTarget, CollectorEngine, Finding,
-                      ScanReport, Subject, SqlFingerprint
+                      ScanReport, Subject, SqlFingerprint, the ingest contract, and the insight
+                      contracts (IInsight, IInsightContext, Insight)
 src/Momus.Postgres    PostgresScanTarget + checks (Npgsql)
 src/Momus.SqlServer   SqlServerScanTarget + checks (Microsoft.Data.SqlClient)
 src/Momus.Server      serve: SQLite store (versioned schema scripts), ScanScheduler, ingest
-                      endpoint + RetentionService, QueryJoin, Razor Pages UI
+                      endpoint + RetentionService, QueryJoin, Insights/ (the rules and the
+                      engine) + InsightService, Razor Pages UI
 src/Momus.Client      in-app half: AddMomus(), EF Core interceptor, operation scope, exporter
 src/Momus.Cli         `momus` dotnet tool: scan + serve; the Docker image is built from here
 samples/Shop.Api      demo shop with deliberate problems and a control panel (:8080)
@@ -56,7 +58,8 @@ docs/                 DESIGN.md, PLAN.md
 - **Empty is healthy.** A check returning no findings is the good outcome.
 - **Every finding carries a `Subject`.** Typed keys (`table:public.orders`, `query:<fingerprint>`) are how findings are joined and how the store recognises the same finding across scans. Never key identity on a title.
 - **One fingerprint for both sides.** `SqlFingerprint` must give the same key to the app's SQL and to the statistics view's SQL. Its tests are real captured pairs; regenerate them with `tools/FingerprintCapture` rather than editing the fixtures by hand.
-- **Insights never open a database connection** (1.0). They read the store. `IDiagnosticCheck` reads live views; keep the two kinds apart.
+- **Insights never open a database connection** (1.0). They read the store. `IDiagnosticCheck` reads live views; keep the two kinds apart. `IInsightContext` is a snapshot loaded before any rule runs, so a rule is a pure function of its inputs and takes time from `ctx.Now`, never from the clock.
+- **Momus's own prose is invariant-culture.** The UI, the insight text and (in M3) the evidence packs are English; their numbers must read as English wherever the server runs. `MomusServer` pins the culture and the rules use `FormattableString.Invariant`.
 - **The client never sends literals, parameter values or result rows** (1.0). Only normalized text and aggregates leave the app.
 
 ## Working conventions

@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Momus.Core.Insights;
+using Momus.Server.Insights;
 using Momus.Server.Store;
 
 namespace Momus.Server.Pages;
@@ -21,7 +23,7 @@ public sealed class QueriesModel(MomusStore store, ServerOptions options) : Page
     public IReadOnlyList<StoredApp> Apps { get; private set; } = [];
     public StoredWindow? LatestWindow { get; private set; }
     public IReadOnlyList<QueryRow> Rows { get; private set; } = [];
-    public IReadOnlyList<AppOperationStat> Operations { get; private set; } = [];
+    public IReadOnlyList<OperationStatView> Operations { get; private set; } = [];
     public int HiddenRows { get; private set; }
     public int Port => options.Port;
 
@@ -43,11 +45,15 @@ public sealed class QueriesModel(MomusStore store, ServerOptions options) : Page
         Apps = await store.AppsAsync(ct);
         LatestWindow = await store.LatestWindowAsync(ct: ct);
 
-        var since = DateTimeOffset.UtcNow - Window;
-        var app = await store.AppQueryStatsAsync(since, ct: ct);
-        Operations = (await store.AppOperationStatsAsync(since, ct: ct)).Take(10).ToList();
+        var now = DateTimeOffset.UtcNow;
+        var since = now - Window;
+        var app = (await store.AppQueryStatsAsync(since, ct: ct)).Select(q => q.ToView(now)).ToList();
+        Operations = (await store.AppOperationStatsAsync(since, ct: ct))
+            .Take(10).Select(o => o.ToView()).ToList();
 
-        var findings = Selected is null ? [] : await store.LatestFindingsAsync(Selected.Id, ct);
+        var findings = Selected is null
+            ? []
+            : (await store.LatestFindingsAsync(Selected.Id, ct)).Select(f => f.ToView()).ToList();
         var rows = QueryJoin.Build(app, findings, Selected?.Id ?? "");
 
         HiddenRows = Math.Max(0, rows.Count - MaxRows);

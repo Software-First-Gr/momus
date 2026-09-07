@@ -1,6 +1,6 @@
 using Momus.Core;
+using Momus.Core.Insights;
 using Momus.Server;
-using Momus.Server.Store;
 
 namespace Momus.Tests;
 
@@ -65,9 +65,8 @@ public class QueryJoinTests
     [Fact]
     public void Cpu_and_execution_time_are_labelled_rather_than_averaged_together()
     {
-        var finding = new StoredFinding
+        var finding = new FindingView
         {
-            Id = 1,
             CheckId = "mssql.top_cpu_queries",
             Category = "queries",
             Severity = Severity.Medium,
@@ -99,7 +98,7 @@ public class QueryJoinTests
 
     // ---- fixtures ----------------------------------------------------------------------
 
-    private static AppQueryStat Stat(string key, string operation, long calls, double sumMs, string target = "shop") =>
+    private static QueryStatView Stat(string key, string operation, long calls, double sumMs, string target = "shop") =>
         new()
         {
             Fingerprint = key,
@@ -109,18 +108,17 @@ public class QueryJoinTests
             CallSite = "OrdersHandler.cs:42",
             Sample = "select ... from order_lines where order_id = ?",
             Calls = calls,
-            DurationSum = sumMs,
-            From = DateTimeOffset.UtcNow.AddMinutes(-1),
-            To = DateTimeOffset.UtcNow,
+            TotalMs = sumMs,
+            MeanMs = calls == 0 ? 0 : sumMs / calls,
+            CallsPerMinute = calls,
         };
 
     private static string Invariant(double value) =>
         value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    private static StoredFinding Finding(
+    private static FindingView Finding(
         Severity severity, string title, string key, double meanMs, double totalMs, long calls) => new()
     {
-        Id = 1,
         CheckId = "pg.top_queries",
         Category = "queries",
         Severity = severity,

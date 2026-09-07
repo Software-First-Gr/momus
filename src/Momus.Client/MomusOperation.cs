@@ -1,4 +1,5 @@
 using Momus.Client.Internal;
+using Momus.Core.Ingest;
 
 namespace Momus.Client;
 
@@ -28,7 +29,7 @@ public static class MomusOperation
         private readonly OperationContext _context;
         private bool _disposed;
 
-        public Scope(string name) => _context = OperationContext.Begin("background", null, name);
+        public Scope(string name) => _context = OperationContext.Begin(IngestOperation.Background, null, name);
 
         public void Dispose()
         {

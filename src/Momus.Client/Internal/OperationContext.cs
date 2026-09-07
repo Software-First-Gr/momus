@@ -72,7 +72,9 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
             return $"{http.Request.Method} {http.Request.Path}";
         }
 
-        return Activity.Current?.DisplayName is { Length: > 0 } activity ? activity : "(unnamed)";
+        return Activity.Current?.DisplayName is { Length: > 0 } activity
+            ? activity
+            : Momus.Core.Ingest.IngestOperation.AmbientName;
     }
 
     /// <summary>Records one statement execution against this operation.</summary>

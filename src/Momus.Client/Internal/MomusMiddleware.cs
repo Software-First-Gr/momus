@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Momus.Core.Ingest;
 
 namespace Momus.Client.Internal;
 
@@ -13,7 +14,7 @@ internal sealed class MomusMiddleware(RequestDelegate next, OperationQueue queue
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        var operation = OperationContext.Begin("http", context, null);
+        var operation = OperationContext.Begin(IngestOperation.Http, context, null);
         try
         {
             await next(context);

@@ -200,24 +200,26 @@ public interface IInsight
     Task<IReadOnlyList<Insight>> EvaluateAsync(IInsightContext ctx, CancellationToken ct);
 }
 
-// IInsightContext gives typed reads, not SQL:
-//   LatestFindings(targetId)            -> findings from the newest scan, by subject
-//   QueryStats(appId, since)            -> per key × operation × call site
-//   QueryStatsByVersion(appId, key)     -> timing grouped by app version
-//   Transactions(appId, since), PoolWaits(appId, since)
-//   PreviousInsight(kind, subjectKey)   -> for first/last seen and status
+// IInsightContext is a snapshot of one database over one stretch of time, loaded before any rule
+// runs — not a set of queries a rule may issue. That makes a rule a pure function of its inputs,
+// and stops two rules disagreeing about what the numbers were mid-evaluation:
+//   TargetId, Now, Since        -> a rule takes time from here, never from the clock
+//   LatestFindings              -> the newest scan's findings, each with its first-seen date
+//   QueryStats                  -> per key × operation × call site, with rates over Since..Now
+//   OperationStats              -> per named operation
+// M3 adds the reads its own rules need — timings by app version, transactions, pool waits.
 ```
 
 ### Rules for 1.0
 
 | Kind | Fires when | Joined evidence | Severity |
 | --- | --- | --- | --- |
-| `n_plus_one` | One key repeats more than 10 times inside a single operation, on average over the window | DB finding on the same key or on its table: seq scan, mean time, missing index | Medium alone, High if the DB side says the table is scanned or the query is slow |
-| `hot_query_origin` | A key appears in the DB's top queries finding | Operation, call site, calls per minute from the app. If no app has sent this key, the insight says so: it comes from a job, a migration or another app | Inherits the DB finding's severity |
+| `n_plus_one` | One key repeats 5 or more times inside a single operation **and** runs at least 60 times a minute — a shape and a cost, because neither alone is worth an afternoon | DB finding on the same key or on its table: seq scan, mean time, missing index | Medium alone, High if the DB side says the table is scanned or the query is slow |
+| `hot_query_origin` | A key is in the top 10 of the DB's top-queries findings by total time. The scan keeps 50 so the Queries tab can join any of them; 50 cards is a list nobody reads | Operation, call site, calls per minute from the app. If no app has sent this key, the insight says so: it comes from a job, a migration or another app | Inherits the DB finding's severity |
 | `regression` | Mean time for a key under the newest app version is more than 3× the previous version's and at least 20 ms slower, with 100 or more calls on each side | Both versions' timings, the DB finding for the key, and any DB finding that appeared between the two deploys | High, Critical above 10× |
 | `transaction_held_open` | p95 open time above 500 ms and DB time inside below 30 percent of it | DB side: idle-in-transaction sessions, blocking chains | High |
 | `pool_wait` | p95 wait above 100 ms | DB side: connection saturation; app side: operations with the longest open transactions | Medium, High when the DB is saturated |
-| `db_finding` | Any DB-native finding, passed through | First seen, last seen, and the app operations that touch its subject | As produced by the check |
+| `db_finding` | Any DB-native finding that is not about a single statement — `hot_query_origin` owns those and says strictly more about each, so two rules never produce two cards for one finding | First seen, last seen, and the app operations that touch its subject | As produced by the check |
 
 ### Ranking
 
@@ -230,7 +232,7 @@ Server-rendered Razor with htmx for the drawer and the refresh, inline SVG spark
 - **Header.** App name and version, target name and server version, last scan and last window age. A stale window is a visible amber pill, because "the client is not sending" is the first-run problem.
 - **Fix first.** Five cards. Each has a title in plain language, one line of why, a call-site chip, a DB-evidence chip, a 24-hour sparkline and three actions: Copy evidence pack, Mute, Details.
 - **Evidence pack.** Markdown on the clipboard: the insight, both sides' numbers, the normalized query, the deploy versions. Written to be pasted into a coding agent.
-- **Tabs.** Insights, Queries, Findings, History, Settings. Findings is today's console report, kept as a tab so nothing is lost.
+- **Tabs.** Insights, Queries, Findings, History, Settings. Findings is today's console report, kept as a tab so nothing is lost. Insights leads the nav from M2.4; the home page becomes the Fix first cards when M3 builds them, and is the Findings tab until then.
 
 ### The Queries tab
 

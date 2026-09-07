@@ -56,7 +56,24 @@ public sealed record IngestOperation(
     long Count,
     Stat DurationMs,
     Counts Queries,
-    Stat DbMs);
+    Stat DbMs)
+{
+    /// <summary>
+    /// Kind of an operation the application named itself, or one built from a route.
+    /// </summary>
+    public const string Http = "http";
+    public const string Background = "background";
+
+    /// <summary>Statements that ran outside any operation: startup, a migration, a timer.</summary>
+    public const string Ambient = "ambient";
+
+    /// <summary>
+    /// The name an ambient statement is reported under when nothing else names it. Both sides
+    /// need it: the client writes it, and the server has to know that a row carrying it is not an
+    /// endpoint, so it never appears in a sentence listing the endpoints that touch a table.
+    /// </summary>
+    public const string AmbientName = "(ambient)";
+}
 
 /// <summary>
 /// One statement, as one operation ran it. <c>Key</c> is the <see cref="SqlFingerprint"/> key —

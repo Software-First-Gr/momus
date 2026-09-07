@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Momus.Core;
+using Momus.Core.Ingest;
 
 namespace Momus.Client.Internal;
 
@@ -19,6 +20,73 @@ internal sealed class MomusCommandInterceptor(
     private readonly ConcurrentDictionary<string, SqlFingerprint.Result> _fingerprints = new();
 
     private const int MaxFingerprints = 5_000;
+
+    // ---- executing ---------------------------------------------------------------------
+    //
+    // These overrides record nothing. They exist to walk the stack while the application's own
+    // frames are still on it: by the time the matching "executed" callback runs, every await
+    // inside EF Core and the ADO.NET provider has resumed on a continuation, and the physical
+    // stack holds nothing above the framework. A call site captured here is cached by
+    // (fingerprint, operation), so the executed side finds it already answered.
+
+    public override InterceptionResult<DbDataReader> ReaderExecuting(
+        DbCommand command, CommandEventData data, InterceptionResult<DbDataReader> result)
+    {
+        Warm(command);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command, CommandEventData data, InterceptionResult<DbDataReader> result,
+        CancellationToken ct = default)
+    {
+        Warm(command);
+        return ValueTask.FromResult(result);
+    }
+
+    public override InterceptionResult<int> NonQueryExecuting(
+        DbCommand command, CommandEventData data, InterceptionResult<int> result)
+    {
+        Warm(command);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+        DbCommand command, CommandEventData data, InterceptionResult<int> result,
+        CancellationToken ct = default)
+    {
+        Warm(command);
+        return ValueTask.FromResult(result);
+    }
+
+    public override InterceptionResult<object> ScalarExecuting(
+        DbCommand command, CommandEventData data, InterceptionResult<object> result)
+    {
+        Warm(command);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+        DbCommand command, CommandEventData data, InterceptionResult<object> result,
+        CancellationToken ct = default)
+    {
+        Warm(command);
+        return ValueTask.FromResult(result);
+    }
+
+    /// <summary>
+    /// Answers "where did this come from" once per statement per operation and caches it. Only
+    /// statements inside a named operation are warmed: those are the ones whose call site the
+    /// product promises, and an ambient statement has no operation to key the cache by yet.
+    /// </summary>
+    private void Warm(DbCommand command)
+    {
+        if (OperationContext.Current is not { } operation) return;
+        if (command.CommandText is not { Length: > 0 } text) return;
+
+        var fingerprint = Fingerprint(text);
+        CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+    }
 
     // ---- executed ----------------------------------------------------------------------
 
@@ -116,7 +184,7 @@ internal sealed class MomusCommandInterceptor(
 
         // Outside any operation: a hosted service, a startup migration, a background timer. The
         // timing still belongs in the query stats; it just is not an operation of its own.
-        var loose = OperationContext.Begin("ambient", null, null);
+        var loose = OperationContext.Begin(IngestOperation.Ambient, null, null);
         try
         {
             var callSite = CallSites.For(fingerprint.Key, loose.Name, fingerprint.Tag);
