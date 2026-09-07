@@ -37,6 +37,7 @@ public sealed class CacheHitRatioCheck : IDiagnosticCheck
                          "were read from disk instead of shared buffers. Healthy OLTP workloads are typically above 99%.",
                 Recommendation = "Check shared_buffers sizing and look for large sequential scans evicting hot data. " +
                                  "The seq-scan and top-query checks in this report usually point at the culprits.",
+                Subjects = [Subject.ForServer()],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["blks_hit"] = hit,

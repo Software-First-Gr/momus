@@ -37,6 +37,7 @@ public sealed class SeqScanHeavyTablesCheck : IDiagnosticCheck
                          $"vs {idxScan:N0} index scans. Every seq scan reads the whole table.",
                 Recommendation = "Inspect the queries hitting this table (see top queries) and add an index " +
                                  "matching their WHERE/JOIN columns, or confirm the scans are intentional (batch jobs, analytics).",
+                Subjects = [Subject.ForTable(table)],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["table"] = table,

@@ -43,6 +43,7 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
                 Recommendation = idleInTx
                     ? "Find the application code path that leaves the transaction open; consider setting idle_in_transaction_session_timeout."
                     : "Inspect the query plan with EXPLAIN; terminate with pg_terminate_backend(pid) if it is a runaway.",
+                Subjects = [Subject.ForSession(pid)],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["pid"] = pid,

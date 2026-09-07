@@ -32,6 +32,7 @@ public sealed class ConnectionSaturationCheck : IDiagnosticCheck
                          "When the limit is hit, new clients fail with 'too many connections'.",
                 Recommendation = "Introduce or tune a connection pooler (PgBouncer, or pooling in the app), " +
                                  "and check for connection leaks before raising max_connections.",
+                Subjects = [Subject.ForServer()],
                 Evidence = new Dictionary<string, object?> { ["used"] = used, ["max"] = max },
             },
         ];

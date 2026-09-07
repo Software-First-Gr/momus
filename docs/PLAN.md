@@ -60,10 +60,10 @@ The design behind all of this is `docs/DESIGN.md`.
 
 ### M1.1 Subjects on findings (Core)
 
-- [ ] Add `Subject` record (`Kind`, `Key`) and `IReadOnlyList<Subject> Subjects` (default empty) to `src/Momus.Core/Finding.cs`. Kinds: `query`, `table`, `index`, `session`, `database`, `server`.
-- [ ] Every existing check sets at least one subject: `pg.top_queries` → `query:<key>`; `pg.seq_scan_heavy_tables`, `pg.dead_tuples` → `table:<schema.name>`; `pg.unused_indexes` → `index:<name>` and `table:`; `pg.problem_sessions` → `session:<pid>`; `pg.cache_hit_ratio`, `pg.connection_saturation` → `server`; `mssql.top_cpu_queries` → `query:<key>`; `mssql.missing_indexes` → `table:`; `mssql.blocking_sessions` → `session:<spid>`; `mssql.wait_stats`, `mssql.memory_pressure` → `server`.
-- [ ] `JsonReport` emits subjects. `ConsoleReport` unchanged. JSON stays backward compatible (additive field).
-- [ ] Tests: a test per provider asserting every finding produced from fixture rows carries at least one subject.
+- [x] Add `Subject` record (`Kind`, `Key`) and `IReadOnlyList<Subject> Subjects` (default empty) to `src/Momus.Core/Finding.cs`. Kinds: `query`, `table`, `index`, `session`, `database`, `server`.
+- [x] Every existing check sets at least one subject: `pg.top_queries` → `query:<key>`; `pg.seq_scan_heavy_tables`, `pg.dead_tuples` → `table:<schema.name>`; `pg.unused_indexes` → `index:<name>` and `table:`; `pg.problem_sessions` → `session:<pid>`; `pg.cache_hit_ratio`, `pg.connection_saturation` → `server`; `mssql.top_cpu_queries` → `query:<key>`; `mssql.missing_indexes` → `table:`; `mssql.blocking` → `session:<spid>` for both ends of the chain; `mssql.wait_stats`, `mssql.memory_pressure` → `server`.
+- [x] `JsonReport` emits subjects as one string each (`table:public.orders`), via `SubjectJsonConverter`. `ConsoleReport` unchanged. JSON stays backward compatible (additive field).
+- [x] Tests: a test per provider asserting every finding produced from fixture rows carries at least one subject (`FakeDataConnection` scripts the statistics views).
 
 ### M1.2 SQL fingerprint (Core)
 

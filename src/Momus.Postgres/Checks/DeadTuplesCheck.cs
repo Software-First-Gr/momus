@@ -35,6 +35,7 @@ public sealed class DeadTuplesCheck : IDiagnosticCheck
                          "Dead tuples bloat the table and slow every scan until vacuum reclaims them.",
                 Recommendation = "Check that autovacuum is keeping up (last runs are in the evidence); consider " +
                                  "lowering autovacuum_vacuum_scale_factor for this table or running VACUUM (ANALYZE) now.",
+                Subjects = [Subject.ForTable(table)],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["table"] = table,

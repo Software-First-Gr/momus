@@ -6,7 +6,9 @@ using Momus.SqlServer.Checks;
 namespace Momus.SqlServer;
 
 /// <summary>SQL Server scan target: connects with Microsoft.Data.SqlClient and runs the DMV check suite.</summary>
-public sealed class SqlServerScanTarget(string connectionString) : IScanTarget
+/// <param name="connectionString">Microsoft.Data.SqlClient connection string. Only DMVs are read.</param>
+/// <param name="topQueryLimit">Statements to keep from dm_exec_query_stats: 5 for a console report, 50 for the store.</param>
+public sealed class SqlServerScanTarget(string connectionString, int topQueryLimit = 5) : IScanTarget
 {
     public string Provider => "sqlserver";
 
@@ -16,7 +18,7 @@ public sealed class SqlServerScanTarget(string connectionString) : IScanTarget
     [
         new WaitStatsCheck(),
         new MissingIndexesCheck(),
-        new TopCpuQueriesCheck(),
+        new TopCpuQueriesCheck(topQueryLimit),
         new BlockingSessionsCheck(),
         new MemoryPressureCheck(),
     ];

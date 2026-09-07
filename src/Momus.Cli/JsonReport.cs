@@ -10,7 +10,7 @@ public static class JsonReport
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower), new SubjectJsonConverter() },
     };
 
     public static string Serialize(ScanReport report) => JsonSerializer.Serialize(report, Options);

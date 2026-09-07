@@ -30,4 +30,10 @@ public sealed record Finding
     /// <summary>Structured supporting data (numbers, object names) for machine consumption.</summary>
     public IReadOnlyDictionary<string, object?> Evidence { get; init; } =
         new Dictionary<string, object?>();
+
+    /// <summary>
+    /// What this finding is about, as typed keys the insight engine and the store join on.
+    /// Every check sets at least one; server-wide observations use <see cref="Subject.ForServer"/>.
+    /// </summary>
+    public IReadOnlyList<Subject> Subjects { get; init; } = [];
 }

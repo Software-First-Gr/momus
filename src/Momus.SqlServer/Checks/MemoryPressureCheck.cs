@@ -33,6 +33,7 @@ public sealed class MemoryPressureCheck : IDiagnosticCheck
                          "PAGEIOLATCH waits and slow queries. The classic floor is ~300s, scaled up for large buffer pools.",
                 Recommendation = "Check max server memory, look for scan-heavy queries flushing the pool " +
                                  "(see top CPU queries), and consider more RAM if the working set simply doesn't fit.",
+                Subjects = [Subject.ForServer()],
                 Evidence = new Dictionary<string, object?> { ["page_life_expectancy_s"] = ple },
             },
         ];

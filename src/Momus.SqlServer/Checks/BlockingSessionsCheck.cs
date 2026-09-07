@@ -32,6 +32,11 @@ public sealed class BlockingSessionsCheck : IDiagnosticCheck
                          "This is live blocking observed at scan time.",
                 Recommendation = "Trace the head blocker (sp_WhoIsActive or sys.dm_exec_requests) — long " +
                                  "transactions and missing indexes are the usual causes.",
+                Subjects =
+                [
+                    Subject.ForSession(Db.ToLong(row["session_id"])),
+                    Subject.ForSession(Db.ToLong(row["blocking_session_id"])),
+                ],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["session_id"] = Db.ToLong(row["session_id"]),

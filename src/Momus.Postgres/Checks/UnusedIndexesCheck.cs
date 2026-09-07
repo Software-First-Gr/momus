@@ -38,6 +38,7 @@ public sealed class UnusedIndexesCheck : IDiagnosticCheck
                          "but still costs write amplification on every INSERT/UPDATE and space on disk.",
                 Recommendation = "Verify usage over a full business cycle (stats reset clears counters), " +
                                  "then DROP INDEX CONCURRENTLY if it is truly unused.",
+                Subjects = [Subject.ForIndex(index), Subject.ForTable(table)],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["table"] = table,

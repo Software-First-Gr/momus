@@ -67,6 +67,7 @@ public sealed class WaitStatsCheck : IDiagnosticCheck
                     : $"{waitType} is among the top waits since the last restart/stats reset.",
                 Recommendation = "Wait stats are cumulative since restart — confirm with a delta sample during " +
                                  "a busy period before acting on them.",
+                Subjects = [Subject.ForServer()],
                 Evidence = new Dictionary<string, object?>
                 {
                     ["wait_type"] = waitType,

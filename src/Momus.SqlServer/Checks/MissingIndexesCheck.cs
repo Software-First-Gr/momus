@@ -13,7 +13,8 @@ public sealed class MissingIndexesCheck : IDiagnosticCheck
     {
         var rows = await Db.QueryAsync(connection, """
             SELECT TOP 10
-                OBJECT_NAME(mid.object_id, mid.database_id) AS table_name,
+                OBJECT_SCHEMA_NAME(mid.object_id, mid.database_id) + '.' +
+                    OBJECT_NAME(mid.object_id, mid.database_id) AS table_name,
                 migs.avg_user_impact,
                 migs.user_seeks + migs.user_scans AS uses,
                 migs.avg_total_user_cost,
@@ -42,6 +43,7 @@ public sealed class MissingIndexesCheck : IDiagnosticCheck
                              "would have used this index. Column details are in the evidence.",
                     Recommendation = "Treat DMV suggestions as hints, not commands: consolidate overlapping " +
                                      "suggestions and validate the workload cost of one more index before creating it.",
+                    Subjects = [Subject.ForTable(table)],
                     Evidence = new Dictionary<string, object?>
                     {
                         ["table"] = table,
