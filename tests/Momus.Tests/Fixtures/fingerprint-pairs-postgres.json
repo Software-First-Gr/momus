@@ -1,0 +1,112 @@
+{
+  "Provider": "postgres",
+  "ServerVersion": "18.4",
+  "CapturedAt": "2026-09-07T10:07:59.064465+00:00",
+  "Pairs": [
+    {
+      "Name": "find_by_key",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022Id\u0022 = 1\nLIMIT 1",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022Id\u0022 = $1\nLIMIT $2"
+    },
+    {
+      "Name": "filter_order_take",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Price\u0022 \u003E 10.0\nORDER BY f.\u0022Name\u0022\nLIMIT @p",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Price\u0022 \u003E $2\nORDER BY f.\u0022Name\u0022\nLIMIT $1"
+    },
+    {
+      "Name": "in_list",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Id\u0022 = ANY (@ids)",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Id\u0022 = ANY ($1)"
+    },
+    {
+      "Name": "like_contains",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Name\u0022 LIKE \u0027%widget%\u0027",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Name\u0022 LIKE $1"
+    },
+    {
+      "Name": "like_starts_with",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Category\u0022 LIKE \u0027too%\u0027",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE f.\u0022Category\u0022 LIKE $1"
+    },
+    {
+      "Name": "lower_like",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE lower(f.\u0022Name\u0022) LIKE \u0027%gizmo%\u0027",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE lower(f.\u0022Name\u0022) LIKE $1"
+    },
+    {
+      "Name": "join",
+      "App": "SELECT f.\u0022Id\u0022, f0.\u0022Name\u0022, f0.\u0022Price\u0022\nFROM fx_lines AS f\nINNER JOIN fx_products AS f0 ON f.\u0022ProductId\u0022 = f0.\u0022Id\u0022\nWHERE f.\u0022Quantity\u0022 \u003E 1",
+      "Db": "SELECT f.\u0022Id\u0022, f0.\u0022Name\u0022, f0.\u0022Price\u0022\nFROM fx_lines AS f\nINNER JOIN fx_products AS f0 ON f.\u0022ProductId\u0022 = f0.\u0022Id\u0022\nWHERE f.\u0022Quantity\u0022 \u003E $1"
+    },
+    {
+      "Name": "group_by_count",
+      "App": "SELECT f.\u0022Status\u0022, count(*)::int AS \u0022Count\u0022\nFROM fx_orders AS f\nGROUP BY f.\u0022Status\u0022",
+      "Db": "SELECT f.\u0022Status\u0022, count(*)::int AS \u0022Count\u0022\nFROM fx_orders AS f\nGROUP BY f.\u0022Status\u0022"
+    },
+    {
+      "Name": "count_scalar",
+      "App": "SELECT count(*)::int\nFROM fx_products AS f\nWHERE f.\u0022Price\u0022 \u003E 5.0",
+      "Db": "SELECT count(*)::int\nFROM fx_products AS f\nWHERE f.\u0022Price\u0022 \u003E $1"
+    },
+    {
+      "Name": "any_exists",
+      "App": "SELECT EXISTS (\n    SELECT 1\n    FROM fx_products AS f\n    WHERE f.\u0022Price\u0022 \u003E 100.0)",
+      "Db": "SELECT EXISTS (\n    SELECT $1\n    FROM fx_products AS f\n    WHERE f.\u0022Price\u0022 \u003E $2)"
+    },
+    {
+      "Name": "max_aggregate",
+      "App": "SELECT max(f.\u0022Price\u0022)\nFROM fx_products AS f",
+      "Db": "SELECT max(f.\u0022Price\u0022)\nFROM fx_products AS f"
+    },
+    {
+      "Name": "date_filter",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022CreatedAt\u0022 \u003E @since",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022CreatedAt\u0022 \u003E $1"
+    },
+    {
+      "Name": "tagged_call_site",
+      "App": "-- OrdersHandler.cs:42\n\nSELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022Status\u0022 = \u0027paid\u0027",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nWHERE f.\u0022Status\u0022 = $1"
+    },
+    {
+      "Name": "pagination",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nORDER BY f.\u0022Id\u0022\nLIMIT @p1 OFFSET @p",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nORDER BY f.\u0022Id\u0022\nLIMIT $1 OFFSET $2"
+    },
+    {
+      "Name": "correlated_subquery",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE EXISTS (\n    SELECT 1\n    FROM fx_lines AS f0\n    WHERE f0.\u0022ProductId\u0022 = f.\u0022Id\u0022)",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022Category\u0022, f.\u0022Name\u0022, f.\u0022Price\u0022\nFROM fx_products AS f\nWHERE EXISTS (\n    SELECT $1\n    FROM fx_lines AS f0\n    WHERE f0.\u0022ProductId\u0022 = f.\u0022Id\u0022)"
+    },
+    {
+      "Name": "distinct_projection",
+      "App": "SELECT DISTINCT f.\u0022Category\u0022\nFROM fx_products AS f",
+      "Db": "SELECT DISTINCT f.\u0022Category\u0022\nFROM fx_products AS f"
+    },
+    {
+      "Name": "order_by_multiple",
+      "App": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nORDER BY f.\u0022Total\u0022 DESC, f.\u0022CreatedAt\u0022\nLIMIT @p",
+      "Db": "SELECT f.\u0022Id\u0022, f.\u0022CreatedAt\u0022, f.\u0022Status\u0022, f.\u0022Total\u0022\nFROM fx_orders AS f\nORDER BY f.\u0022Total\u0022 DESC, f.\u0022CreatedAt\u0022\nLIMIT $1"
+    },
+    {
+      "Name": "insert_single",
+      "App": "INSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES (@p0, @p1, @p2)\nRETURNING \u0022Id\u0022;\n",
+      "Db": "INSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES ($1, $2, $3)\nRETURNING \u0022Id\u0022"
+    },
+    {
+      "Name": "insert_batch",
+      "App": "INSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES (@p0, @p1, @p2)\nRETURNING \u0022Id\u0022;\nINSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES (@p3, @p4, @p5)\nRETURNING \u0022Id\u0022;\nINSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES (@p6, @p7, @p8)\nRETURNING \u0022Id\u0022;\n",
+      "Db": "INSERT INTO fx_products (\u0022Category\u0022, \u0022Name\u0022, \u0022Price\u0022)\nVALUES ($1, $2, $3)\nRETURNING \u0022Id\u0022"
+    },
+    {
+      "Name": "execute_update",
+      "App": "UPDATE fx_orders AS f\nSET \u0022Total\u0022 = f.\u0022Total\u0022 \u002B 1.0\nWHERE f.\u0022Id\u0022 = 1",
+      "Db": "UPDATE fx_orders AS f\nSET \u0022Total\u0022 = f.\u0022Total\u0022 \u002B $1\nWHERE f.\u0022Id\u0022 = $2"
+    },
+    {
+      "Name": "execute_delete",
+      "App": "DELETE FROM fx_lines AS f\nWHERE f.\u0022Quantity\u0022 \u003C 0",
+      "Db": "DELETE FROM fx_lines AS f\nWHERE f.\u0022Quantity\u0022 \u003C $1"
+    }
+  ]
+}

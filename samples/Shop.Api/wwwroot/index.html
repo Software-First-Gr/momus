@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop.Api — Momus demo shop</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e2e5ea;
+    --ink: #16181d;
+    --muted: #5f6673;
+    --accent: #2f6feb;
+    --good: #1a7f4b;
+    --warn: #b25e09;
+    --bad: #c0362c;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --border: #262b36; --ink: #e7e9ee; --muted: #98a0ae;
+      --accent: #6b9cff; --good: #4cc38a; --warn: #e0a145; --bad: #f0736a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    border-bottom: 1px solid var(--border); background: var(--panel);
+    padding: 18px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .grow { flex: 1; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .tile { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .tile .v { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .tile .k { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 13px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel); color: var(--ink); transition: .12s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); color: #fff; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button[disabled] { opacity: .5; cursor: progress; }
+  .seg { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  a.link { color: var(--accent); text-decoration: none; font-size: 13px; }
+  a.link:hover { text-decoration: underline; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .card { border: 1px solid var(--border); border-radius: 9px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { margin: 0; font-size: 13px; color: var(--muted); }
+  .card .expect { border-left: 2px solid var(--border); padding-left: 10px; font-size: 12.5px; }
+  .card footer { margin-top: auto; padding-top: 6px; display: flex; align-items: center; gap: 10px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); }
+  .pill.live { color: var(--warn); border-color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  td.name { font-family: var(--mono); font-size: 12.5px; }
+  td.bad { color: var(--bad); }
+  #log { font-family: var(--mono); font-size: 12px; max-height: 240px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+  #log li { padding: 3px 0; border-bottom: 1px solid var(--border); display: flex; gap: 10px; }
+  #log .t { color: var(--muted); flex-shrink: 0; }
+  #log .error { color: var(--bad); }
+  #log .run { color: var(--good); }
+  .muted { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Shop.Api <span class="muted">— Momus demo shop</span></h1>
+    <p>A deliberately flawed .NET app. Give it traffic, then look at what Momus makes of it.</p>
+  </div>
+  <div class="grow"></div>
+  <div class="seg">
+    <span class="muted" id="dbinfo">connecting…</span>
+    <a class="link" id="momus" href="http://localhost:4848" target="_blank" rel="noreferrer">Open Momus ↗</a>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>Right now</h2>
+    <div class="tiles" id="tiles"></div>
+    <div style="margin-top:16px" class="seg">
+      <strong style="font-size:13px">Background traffic</strong>
+      <button data-traffic="off">Off</button>
+      <button data-traffic="light">Light · ~2/s</button>
+      <button data-traffic="heavy">Heavy · ~20/s</button>
+      <span class="muted">Statistics views are cumulative — steady traffic is what makes them interesting.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Send a signal</h2>
+    <div class="cards" id="scenarios"></div>
+  </section>
+
+  <section>
+    <h2>What the database sees</h2>
+    <table>
+      <thead><tr><th>Table</th><th>Live rows</th><th>Seq scans</th><th>Index scans</th><th>Dead rows</th></tr></thead>
+      <tbody id="tables"></tbody>
+    </table>
+    <p class="muted" style="margin:12px 0 0">Straight from <code>pg_stat_user_tables</code> — the same view Momus reads.</p>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <ul id="log"></ul>
+    <div class="seg" style="margin-top:14px">
+      <button class="danger" id="reset">Drop and reseed the database</button>
+      <span class="muted">Also resets every counter the checks depend on.</span>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const n = (v) => (v ?? 0).toLocaleString();
+let status = null;
+
+async function post(path) {
+  const response = await fetch(path, { method: 'POST' });
+  return response.json().catch(() => ({}));
+}
+
+function tiles(s) {
+  const rows = [
+    ['Traffic', s.traffic],
+    ['Requests', n(s.operations)],
+    ['Queries', n(s.queries)],
+    ['Errors', n(s.errors)],
+    ['Uptime', `${Math.floor(s.uptimeSeconds / 60)}m ${s.uptimeSeconds % 60}s`],
+  ];
+  $('tiles').innerHTML = rows
+    .map(([k, v]) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`)
+    .join('');
+}
+
+function scenarios(s) {
+  const running = Object.fromEntries((s.jobs ?? []).map((j) => [j.id, j]));
+  $('scenarios').innerHTML = s.scenarios.map((sc) => {
+    const job = running[sc.id];
+    const badge = sc.kind === 'background'
+      ? `<span class="pill ${job ? 'live' : ''}">${job ? `${job.secondsLeft}s left` : 'runs for minutes'}</span>`
+      : '';
+    const action = job
+      ? `<button data-stop="${sc.id}">Stop</button>`
+      : `<button class="primary" data-run="${sc.id}">Run</button>`;
+    return `<div class="card">
+      <h3>${sc.title}</h3>
+      <p>${sc.what}</p>
+      <p class="expect"><strong>Momus should say:</strong> ${sc.expect}</p>
+      <footer>${action}${badge}</footer>
+    </div>`;
+  }).join('');
+}
+
+function tables(s) {
+  $('tables').innerHTML = (s.tables ?? []).map((t) => `<tr>
+    <td class="name">${t.name}</td>
+    <td>${n(t.rows)}</td>
+    <td class="${t.seqScans > t.indexScans && t.rows > 10000 ? 'bad' : ''}">${n(t.seqScans)}</td>
+    <td>${n(t.indexScans)}</td>
+    <td class="${t.deadRows > 10000 ? 'bad' : ''}">${n(t.deadRows)}</td>
+  </tr>`).join('');
+}
+
+function log(s) {
+  $('log').innerHTML = (s.log ?? []).map((l) => {
+    const t = new Date(l.at).toLocaleTimeString();
+    return `<li><span class="t">${t}</span><span class="${l.level}">${l.message}</span></li>`;
+  }).join('');
+}
+
+async function refresh() {
+  try {
+    const response = await fetch('/api/status');
+    status = await response.json();
+    $('dbinfo').textContent = `${status.database} on ${status.host}`;
+    $('momus').href = status.momusUrl;
+    document.querySelectorAll('[data-traffic]').forEach((b) =>
+      b.classList.toggle('on', b.dataset.traffic === status.traffic));
+    tiles(status);
+    scenarios(status);
+    tables(status);
+    log(status);
+  } catch {
+    $('dbinfo').textContent = 'app unreachable';
+  }
+}
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+
+  if (button.dataset.traffic) { await post(`/api/traffic/${button.dataset.traffic}`); return refresh(); }
+  if (button.dataset.stop) { await post(`/api/scenario/${button.dataset.stop}/stop`); return refresh(); }
+  if (button.dataset.run) {
+    button.disabled = true;
+    button.textContent = 'Running…';
+    await post(`/api/scenario/${button.dataset.run}`);
+    return refresh();
+  }
+  if (button.id === 'reset' && confirm('Drop every table and seed again?')) {
+    button.disabled = true;
+    button.textContent = 'Reseeding…';
+    await post('/api/reset');
+    button.disabled = false;
+    button.textContent = 'Drop and reseed the database';
+    return refresh();
+  }
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

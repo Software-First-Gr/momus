@@ -37,7 +37,7 @@ The design behind all of this is `docs/DESIGN.md`.
 ## Open questions
 
 - **EF Core auto-registration of interceptors without user code.** Candidates: register `IInterceptor` implementations in the app's DI (EF Core resolves them from the application service provider) or `IDbContextOptionsConfiguration<TContext>` / `ConfigureDbContext` (EF Core 8+). Verify on EF Core 8, 9 and 10 before building M2.1.
-- **Fingerprint edge cases** between app command text and `pg_stat_statements` / `dm_exec_sql_text`: EF-generated aliases, `IN` lists, `VALUES` batches, comments, SQL Server statement slicing. Solve with fixture pairs, not guesses (M1.2).
+- ~~**Fingerprint edge cases**~~ **Answered in M1.2 by real pairs.** Three things actually differ, and all three are now handled: (1) EF Core appends a trailing `;` that the statistics views do not keep; (2) EF batches several statements into one command while the database records each separately, so joining is per statement — hence `SqlFingerprint.Split`; (3) **SQL Server's simple parameterization rewrites the statement before caching it**, turning `FROM [t] AS [a]` into `FROM [t] [a]` and a literal into `@1`, so the optional alias `AS` must be dropped on both sides. Aliases, `IN` lists, `VALUES` batches, tag comments and pagination parameters needed no special handling. Re-run `tools/FingerprintCapture` against a new EF or engine version to check this still holds.
 - **Ranking weights** for "Fix first" (severity × traffic share × recency). Start simple, tune on real data (M3).
 - **Pro price point.** Anchor around a consultant hour; decide at M5 with real users.
 - **Branch policy.** `main` still sits at the initial commit. Either merge `develop` into `main` at each release, or make `develop` the default branch. Recommended: merge at each release, so `main` always equals the last published tag.
@@ -67,9 +67,9 @@ The design behind all of this is `docs/DESIGN.md`.
 
 ### M1.2 SQL fingerprint (Core)
 
-- [ ] `src/Momus.Core/SqlFingerprint.cs`: `Normalize(string sql)` and `Compute(string sql)` returning the first 16 hex chars of SHA-256 of the normalized text. Steps: strip comments (remember an EF `TagWith` comment as call site), collapse whitespace, replace numeric and quoted literals with `?`, replace parameter markers (`@p0`, `$1`, `:p1`) with `?`, collapse `IN (?, ?, ?)` and repeated `VALUES (...)` groups, lowercase keywords only, keep identifier case.
-- [ ] `tests/Momus.Tests/SqlFingerprintTests.cs` with fixture pairs: app text vs `pg_stat_statements.query` (10+ pairs) and app text vs `dm_exec_sql_text` slice (10+ pairs). Collect real pairs from a local database; do not invent them.
-- [ ] `TopQueriesCheck` and `TopCpuQueriesCheck`: compute the key from the stats-view text, add `query:<key>` subject, add `queryid` (PG) / `query_hash` (MSSQL) to Evidence, take a `limit` constructor parameter (default 5; the server will pass 50).
+- [x] `src/Momus.Core/SqlFingerprint.cs`: `Normalize(string sql)` and `Compute(string sql)` returning the first 16 hex chars of SHA-256 of the normalized text. Steps: strip comments (remember an EF `TagWith` comment as call site), collapse whitespace, replace numeric and quoted literals with `?`, replace parameter markers (`@p0`, `$1`, `:p1`) with `?`, collapse `IN (?, ?, ?)` and repeated `VALUES (...)` groups, lowercase keywords only, keep identifier case. Also drops the optional alias `AS` and splits multi-statement commands (`Split`); see Open questions for why.
+- [x] `tests/Momus.Tests/SqlFingerprintTests.cs` with fixture pairs: 21 Postgres and 21 SQL Server pairs in `tests/Momus.Tests/Fixtures/`, every one captured from a running server by `tools/FingerprintCapture` (a new throwaway-schema harness that runs 21 EF Core query shapes and reads back what the engine recorded for each). Re-run it to extend or refresh them.
+- [x] `TopQueriesCheck` and `TopCpuQueriesCheck`: compute the key from the stats-view text, add `query:<key>` subject, add `queryid` (PG) / `query_hash` (MSSQL) to Evidence, take a `limit` constructor parameter (default 5; the server will pass 50). Both now select the full statement text for hashing and keep the truncated copy for display.
 
 ### M1.3 Server project and store
 

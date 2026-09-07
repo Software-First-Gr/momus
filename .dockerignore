@@ -1,0 +1,9 @@
+**/bin
+**/obj
+**/artifacts
+**/.vs
+**/.idea
+.git
+.github
+docs
+*.md

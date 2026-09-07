@@ -29,13 +29,59 @@ public static class SqlFingerprint
     /// <summary>The canonical text of a statement, without hashing it.</summary>
     public static string Normalize(string? sql) => Analyze(sql).Text;
 
-    /// <summary>Normalized text, key and leading comment in one pass.</summary>
+    /// <summary>Normalized text, key and leading comment for the whole command.</summary>
     public static Result Analyze(string? sql)
     {
-        var (tokens, tag) = Tokenize(sql ?? "");
-        CollapseGroups(tokens);
-        var text = Render(tokens);
-        return new Result(text, Hash(text), tag);
+        var statements = Split(sql);
+        if (statements.Count == 1) return statements[0];
+
+        var text = string.Join("; ", statements.Select(s => s.Text));
+        return new Result(text, Hash(text), statements.Count == 0 ? null : statements[0].Tag);
+    }
+
+    /// <summary>
+    /// One result per statement in the command. EF Core sends batches — three inserts in a single
+    /// round trip — while the database records each statement separately, so joining the two sides
+    /// means comparing per statement, not per command.
+    /// </summary>
+    public static IReadOnlyList<Result> Split(string? sql)
+    {
+        var (tokens, comments) = Tokenize(sql ?? "");
+        var results = new List<Result>(1);
+
+        foreach (var (from, to) in StatementRanges(tokens))
+        {
+            var statement = tokens.GetRange(from, to - from);
+            CollapseGroups(statement);
+            var text = Render(statement);
+            if (text.Length == 0) continue;
+
+            var tag = comments.FirstOrDefault(c => c.Index >= from && c.Index <= to).Text;
+            results.Add(new Result(text, Hash(text), tag));
+        }
+
+        return results.Count == 0 ? [new Result("", Hash(""), null)] : results;
+    }
+
+    /// <summary>Statement boundaries: top-level semicolons only, never one inside brackets.</summary>
+    private static IEnumerable<(int From, int To)> StatementRanges(List<Token> tokens)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind != Kind.Punct) continue;
+            switch (tokens[i].Text)
+            {
+                case "(": depth++; break;
+                case ")": depth--; break;
+                case ";" when depth == 0:
+                    yield return (start, i);
+                    start = i + 1;
+                    break;
+            }
+        }
+        if (start < tokens.Count) yield return (start, tokens.Count);
     }
 
     private static string Hash(string normalized)
@@ -52,10 +98,12 @@ public static class SqlFingerprint
 
     private readonly record struct Token(Kind Kind, string Text);
 
-    private static (List<Token> Tokens, string? Tag) Tokenize(string sql)
+    private readonly record struct Comment(int Index, string Text);
+
+    private static (List<Token> Tokens, List<Comment> Comments) Tokenize(string sql)
     {
         var tokens = new List<Token>(64);
-        string? tag = null;
+        var comments = new List<Comment>();
         var i = 0;
 
         while (i < sql.Length)
@@ -69,7 +117,7 @@ public static class SqlFingerprint
             {
                 var end = sql.IndexOfAny(['\n', '\r'], i);
                 if (end < 0) end = sql.Length;
-                tag ??= Trimmed(sql[(i + 2)..end]);
+                Remember(sql[(i + 2)..end]);
                 i = end;
                 continue;
             }
@@ -79,7 +127,7 @@ public static class SqlFingerprint
             {
                 var end = sql.IndexOf("*/", i + 2, StringComparison.Ordinal);
                 var body = end < 0 ? sql[(i + 2)..] : sql[(i + 2)..end];
-                tag ??= Trimmed(body);
+                Remember(body);
                 i = end < 0 ? sql.Length : end + 2;
                 continue;
             }
@@ -202,13 +250,13 @@ public static class SqlFingerprint
             i++;
         }
 
-        return (tokens, tag);
-    }
+        return (tokens, comments);
 
-    private static string? Trimmed(string text)
-    {
-        var t = text.Trim();
-        return t.Length == 0 ? null : t;
+        void Remember(string body)
+        {
+            var text = body.Trim();
+            if (text.Length > 0) comments.Add(new Comment(tokens.Count, text));
+        }
     }
 
     // ---- 2. collapse repeated groups --------------------------------------------------
@@ -218,6 +266,8 @@ public static class SqlFingerprint
 
     private static void CollapseGroups(List<Token> tokens)
     {
+        DropAliasAs(tokens);
+
         for (var i = 0; i < tokens.Count; i++)
         {
             if (tokens[i] is { Kind: Kind.Keyword, Text: "in" } &&
@@ -250,6 +300,42 @@ public static class SqlFingerprint
             }
         }
     }
+
+    /// <summary>
+    /// Drops the optional <c>AS</c> in front of an alias. SQL Server's simple parameterization
+    /// rewrites a statement before caching it — <c>FROM [t] AS [a]</c> comes back out of
+    /// dm_exec_sql_text as <c>FROM [t] [a]</c> — so a fingerprint that counted the keyword would
+    /// give one key to the application and another to the database for the same query. The
+    /// mandatory <c>AS</c> inside CAST and CONVERT is left alone.
+    /// </summary>
+    private static void DropAliasAs(List<Token> tokens)
+    {
+        var functions = new Stack<string>();
+
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind == Kind.Punct)
+            {
+                if (tokens[i].Text == "(")
+                {
+                    functions.Push(i > 0 && tokens[i - 1].Kind != Kind.Punct ? tokens[i - 1].Text : "");
+                }
+                else if (tokens[i].Text == ")" && functions.Count > 0)
+                {
+                    functions.Pop();
+                }
+                continue;
+            }
+
+            if (tokens[i] is not { Kind: Kind.Keyword, Text: "as" }) continue;
+            if (functions.Count > 0 && CastLike.Contains(functions.Peek())) continue;
+
+            tokens.RemoveAt(i--);
+        }
+    }
+
+    private static readonly HashSet<string> CastLike =
+        new(StringComparer.OrdinalIgnoreCase) { "cast", "convert", "try_cast", "try_convert" };
 
     private static int MatchParen(List<Token> tokens, int open)
     {

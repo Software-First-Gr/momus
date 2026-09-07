@@ -1,0 +1,112 @@
+{
+  "Provider": "sqlserver",
+  "ServerVersion": "16.00.4236",
+  "CapturedAt": "2026-09-07T10:11:03.876154+00:00",
+  "Pairs": [
+    {
+      "Name": "find_by_key",
+      "App": "SELECT TOP(1) [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nWHERE [f].[Id] = 1",
+      "Db": "SELECT TOP(1) [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nWHERE [f].[Id] = 1"
+    },
+    {
+      "Name": "filter_order_take",
+      "App": "SELECT TOP(@p) [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Price] \u003E 10.0\nORDER BY [f].[Name]",
+      "Db": "SELECT TOP(@p) [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Price] \u003E 10.0\nORDER BY [f].[Name]"
+    },
+    {
+      "Name": "in_list",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Id] IN (@ids1, @ids2, @ids3, @ids4, @ids5)",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Id] IN (@ids1, @ids2, @ids3, @ids4, @ids5)"
+    },
+    {
+      "Name": "like_contains",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Name] LIKE N\u0027%widget%\u0027",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Name] LIKE N\u0027%widget%\u0027"
+    },
+    {
+      "Name": "like_starts_with",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Category] LIKE N\u0027too%\u0027",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE [f].[Category] LIKE N\u0027too%\u0027"
+    },
+    {
+      "Name": "lower_like",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE LOWER([f].[Name]) LIKE N\u0027%gizmo%\u0027",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE LOWER([f].[Name]) LIKE N\u0027%gizmo%\u0027"
+    },
+    {
+      "Name": "join",
+      "App": "SELECT [f].[Id], [f0].[Name], [f0].[Price]\nFROM [fx_lines] AS [f]\nINNER JOIN [fx_products] AS [f0] ON [f].[ProductId] = [f0].[Id]\nWHERE [f].[Quantity] \u003E 1",
+      "Db": "SELECT [f].[Id], [f0].[Name], [f0].[Price]\nFROM [fx_lines] AS [f]\nINNER JOIN [fx_products] AS [f0] ON [f].[ProductId] = [f0].[Id]\nWHERE [f].[Quantity] \u003E 1"
+    },
+    {
+      "Name": "group_by_count",
+      "App": "SELECT [f].[Status], COUNT(*) AS [Count]\nFROM [fx_orders] AS [f]\nGROUP BY [f].[Status]",
+      "Db": "SELECT [f].[Status], COUNT(*) AS [Count]\nFROM [fx_orders] AS [f]\nGROUP BY [f].[Status]"
+    },
+    {
+      "Name": "count_scalar",
+      "App": "SELECT COUNT(*)\nFROM [fx_products] AS [f]\nWHERE [f].[Price] \u003E 5.0",
+      "Db": "SELECT COUNT(*) FROM [fx_products] [f] WHERE [f].[Price]\u003E@1"
+    },
+    {
+      "Name": "any_exists",
+      "App": "SELECT CASE\n    WHEN EXISTS (\n        SELECT 1\n        FROM [fx_products] AS [f]\n        WHERE [f].[Price] \u003E 100.0) THEN CAST(1 AS bit)\n    ELSE CAST(0 AS bit)\nEND",
+      "Db": "SELECT CASE\n    WHEN EXISTS (\n        SELECT 1\n        FROM [fx_products] AS [f]\n        WHERE [f].[Price] \u003E 100.0) THEN CAST(1 AS bit)\n    ELSE CAST(0 AS bit)\nEND"
+    },
+    {
+      "Name": "max_aggregate",
+      "App": "SELECT MAX([f].[Price])\nFROM [fx_products] AS [f]",
+      "Db": "SELECT MAX([f].[Price])\nFROM [fx_products] AS [f]"
+    },
+    {
+      "Name": "date_filter",
+      "App": "SELECT [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nWHERE [f].[CreatedAt] \u003E @since",
+      "Db": "SELECT [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nWHERE [f].[CreatedAt] \u003E @since"
+    },
+    {
+      "Name": "tagged_call_site",
+      "App": "-- OrdersHandler.cs:42\n\nSELECT [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nWHERE [f].[Status] = N\u0027paid\u0027",
+      "Db": "SELECT [f].[Id],[f].[CreatedAt],[f].[Status],[f].[Total] FROM [fx_orders] [f] WHERE [f].[Status]=@1"
+    },
+    {
+      "Name": "pagination",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nORDER BY [f].[Id]\nOFFSET @p ROWS FETCH NEXT @p1 ROWS ONLY",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nORDER BY [f].[Id]\nOFFSET @p ROWS FETCH NEXT @p1 ROWS ONLY"
+    },
+    {
+      "Name": "correlated_subquery",
+      "App": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE EXISTS (\n    SELECT 1\n    FROM [fx_lines] AS [f0]\n    WHERE [f0].[ProductId] = [f].[Id])",
+      "Db": "SELECT [f].[Id], [f].[Category], [f].[Name], [f].[Price]\nFROM [fx_products] AS [f]\nWHERE EXISTS (\n    SELECT 1\n    FROM [fx_lines] AS [f0]\n    WHERE [f0].[ProductId] = [f].[Id])"
+    },
+    {
+      "Name": "distinct_projection",
+      "App": "SELECT DISTINCT [f].[Category]\nFROM [fx_products] AS [f]",
+      "Db": "SELECT DISTINCT [f].[Category]\nFROM [fx_products] AS [f]"
+    },
+    {
+      "Name": "order_by_multiple",
+      "App": "SELECT TOP(@p) [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nORDER BY [f].[Total] DESC, [f].[CreatedAt]",
+      "Db": "SELECT TOP(@p) [f].[Id], [f].[CreatedAt], [f].[Status], [f].[Total]\nFROM [fx_orders] AS [f]\nORDER BY [f].[Total] DESC, [f].[CreatedAt]"
+    },
+    {
+      "Name": "insert_single",
+      "App": "SET IMPLICIT_TRANSACTIONS OFF;\nSET NOCOUNT ON;\nINSERT INTO [fx_products] ([Category], [Name], [Price])\nOUTPUT INSERTED.[Id]\nVALUES (@p0, @p1, @p2);\n",
+      "Db": "INSERT INTO [fx_products] ([Category], [Name], [Price])\nOUTPUT INSERTED.[Id]\nVALUES (@p0, @p1, @p2)"
+    },
+    {
+      "Name": "insert_batch",
+      "App": "SET IMPLICIT_TRANSACTIONS OFF;\nSET NOCOUNT ON;\nMERGE [fx_products] USING (\nVALUES (@p0, @p1, @p2, 0),\n(@p3, @p4, @p5, 1),\n(@p6, @p7, @p8, 2)) AS i ([Category], [Name], [Price], _Position) ON 1=0\nWHEN NOT MATCHED THEN\nINSERT ([Category], [Name], [Price])\nVALUES (i.[Category], i.[Name], i.[Price])\nOUTPUT INSERTED.[Id], i._Position;\n",
+      "Db": "MERGE [fx_products] USING (\nVALUES (@p0, @p1, @p2, 0),\n(@p3, @p4, @p5, 1),\n(@p6, @p7, @p8, 2)) AS i ([Category], [Name], [Price], _Position) ON 1=0\nWHEN NOT MATCHED THEN\nINSERT ([Category], [Name], [Price])\nVALUES (i.[Category], i.[Name], i.[Price])\nOUTPUT INSERTED.[Id], i._Position;"
+    },
+    {
+      "Name": "execute_update",
+      "App": "UPDATE [f]\nSET [f].[Total] = [f].[Total] \u002B 1.0\nFROM [fx_orders] AS [f]\nWHERE [f].[Id] = 1",
+      "Db": "UPDATE [f]\nSET [f].[Total] = [f].[Total] \u002B 1.0\nFROM [fx_orders] AS [f]\nWHERE [f].[Id] = 1"
+    },
+    {
+      "Name": "execute_delete",
+      "App": "DELETE FROM [f]\nFROM [fx_lines] AS [f]\nWHERE [f].[Quantity] \u003C 0",
+      "Db": "DELETE FROM [f]\nFROM [fx_lines] AS [f]\nWHERE [f].[Quantity] \u003C 0"
+    }
+  ]
+}

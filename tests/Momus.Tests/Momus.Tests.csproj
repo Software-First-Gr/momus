@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Real (app text, statistics-view text) pairs, captured by tools/FingerprintCapture. -->
+    <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Momus.Core\Momus.Core.csproj" />
     <ProjectReference Include="..\..\src\Momus.Postgres\Momus.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Momus.SqlServer\Momus.SqlServer.csproj" />
