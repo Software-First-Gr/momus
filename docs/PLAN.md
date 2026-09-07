@@ -17,6 +17,7 @@ The design behind all of this is `docs/DESIGN.md`.
 | Date | State |
 | --- | --- |
 | 2026-09-06 | Collector core 0.x exists (CLI `scan`, Postgres + SQL Server checks, 16 tests). Packages `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer` published as 0.0.1 to claim the ids. Repo public. CI: build/test/pack on push, publish on `v*` tags. M1 not started. |
+| 2026-09-07 | **M2.1 drafted but never compiled.** `src/Momus.Client` and `Momus.Core/Ingest` exist and are uncommitted; the session that wrote them lost the ability to run `dotnet` partway through. Nothing after M1 has been through a compiler. Start the next session with `dotnet build`, then wire `AddMomus()` into `samples/Shop.Api`. The commits up to `6cab539` are green and unaffected. |
 | 2026-09-07 | **M1.1–M1.6 done, plus the demo stack (M1.8).** `momus serve` scans on a schedule, keeps history in SQLite and shows findings with first-seen dates; `docker compose up` brings up Postgres + Momus + a flawed demo shop and the whole loop works end to end on this machine. 110 tests. Remaining for the `v0.1.0` release: run it beside a real database for a week (M1's "done when"), decide D3, and the housekeeping list. Nothing is published yet — no tag, no image pushed. |
 
 ## Decisions
@@ -34,11 +35,26 @@ The design behind all of this is `docs/DESIGN.md`.
 | D9 | 2026-09-06 | Repo public since 2026-09-06. Quiet until M1 runs end to end; launch post after M4. |
 | D10 | 2026-09-06 | Money: free tier never gates checks, insights, MCP or CLI. Pro (self-hosted, offline license key, per server) gates retention, multiple apps/targets, alerts, login, white-label report. Billing is built only after strangers use the free tier daily (M5, not before). |
 | D11 | 2026-09-06 | Package ids stay product-first: `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer`, later `Momus.Client`. No `SoftwareFirst.` prefix, unlike `SoftwareFirst.Switchboard` (where the bare id was free and prefixing was a choice). Momus is a product, not a company utility: it owns a CLI command (`dotnet tool install -g Momus` -> `momus`, an id/command split a prefix would force), a Docker image and a multi-package family where `SoftwareFirst.Momus.Client.Switchboard` is a cost Switchboard never paid. Namespace protection comes from an ID prefix reservation instead, not from the id. |
+| D12 | 2026-09-07 | **Legacy .NET support, if built, is separate projects in this repo — never extra target frameworks on `Momus.Client`.** `Momus.Client` carries a `FrameworkReference` to ASP.NET Core, so it cannot also be a `net472` System.Web host; and adding `EntityFramework` 6.x to it would push EF6 onto every EF Core user. So `Momus.Client.Ef6` (the EF6 hook, usable on modern .NET *and* on Framework) and `Momus.Client.Framework` (the System.Web host, Windows only), with the host-neutral capture pieces moved down into `Momus.Core` rather than into a fourth package. Same repo, same version, same tag (D2); the same adapter shape M4 already plans for `Momus.Client.Switchboard`. This settles the **layout**, not whether to build it — that is M6 and it is gated. |
 
 ## Open questions
 
-- **EF Core auto-registration of interceptors without user code.** Candidates: register `IInterceptor` implementations in the app's DI (EF Core resolves them from the application service provider) or `IDbContextOptionsConfiguration<TContext>` / `ConfigureDbContext` (EF Core 8+). Verify on EF Core 8, 9 and 10 before building M2.1.
+- ~~**EF Core auto-registration of interceptors**~~ **Answered by measurement, 2026-09-07.** The first candidate is wrong: registering an `IInterceptor` in the application's DI container does **not** make EF Core pick it up — verified false on EF Core 8.0.11, 9.0.11 and 10.0.11, with `AddDbContext`, `AddDbContextPool` and registration both before and after. What does work on all three majors is **rewriting the `DbContextOptions<T>` service descriptors**: `AddMomus()` walks the `IServiceCollection`, and for every `DbContextOptions<T>` registration wraps the factory so the options it hands out carry one more interceptor. Confirmed for `AddDbContext`, `AddDbContextPool` and `AddDbContextFactory`. Two consequences, both documented and handled: `AddMomus()` must be called **after** the `AddDbContext` calls (the client warns loudly at startup if it decorated nothing), and a `DbContext` built by hand outside DI cannot be reached at all.
 - ~~**Fingerprint edge cases**~~ **Answered in M1.2 by real pairs.** Three things actually differ, and all three are now handled: (1) EF Core appends a trailing `;` that the statistics views do not keep; (2) EF batches several statements into one command while the database records each separately, so joining is per statement — hence `SqlFingerprint.Split`; (3) **SQL Server's simple parameterization rewrites the statement before caching it**, turning `FROM [t] AS [a]` into `FROM [t] [a]` and a literal into `@1`, so the optional alias `AS` must be dropped on both sides. Aliases, `IN` lists, `VALUES` batches, tag comments and pagination parameters needed no special handling. Re-run `tools/FingerprintCapture` against a new EF or engine version to check this still holds.
+- **A universal data-access hook.** The descriptor-rewriting trick works, but it costs a call-ordering
+  rule (`AddMomus()` after `AddDbContext()`), it cannot see a `DbContext` built by hand, and it is
+  EF Core only. There may be a hook below all of that: `Microsoft.Data.SqlClient` emits
+  `DiagnosticListener` events per command, and Npgsql emits `ActivitySource` spans carrying the
+  statement. One subscriber there would in principle catch EF Core, EF6, Dapper and raw ADO.NET at
+  once, with no ordering rule and no dependency on how the context was built. **Unverified — measure
+  it (M2.1) before M2.2 freezes the ingest path**, the same way the EF Core interceptor question was
+  settled, where the documented-looking answer turned out to be false. If it holds it changes the
+  cost of M6 and of the Dapper line under "Later".
+
+- **Is legacy .NET an audience for Momus?** Unknown, and cheap to find out: `scan` and `serve` already
+  work for those shops today — they read the database, not the app — so the probe is one honest line
+  in the README (M1.7) and then counting who turns up. M6 is gated on the answer.
+
 - **Ranking weights** for "Fix first" (severity × traffic share × recency). Start simple, tune on real data (M3).
 - **Pro price point.** Anchor around a consultant hour; decide at M5 with real users.
 - **Branch policy.** `main` still sits at the initial commit. Either merge `develop` into `main` at each release, or make `develop` the default branch. Recommended: merge at each release, so `main` always equals the last published tag.
@@ -113,6 +129,10 @@ dates and staleness all need a database under real, changing load.
 
 - [ ] Restore descriptive package metadata is already in the repo; verify nuget.org listing after publish.
 - [ ] Note in the README that the `Momus` tool now runs on the ASP.NET Core shared framework, because the binary contains the server. Verified working: packed 0.0.1, installed with `dotnet tool install --tool-path`, both `scan` and `serve` run — the .NET SDK ships that framework, and installing a dotnet tool requires the SDK. It only matters for a machine with the runtime but not the SDK.
+- [ ] README: say plainly that `scan` and `serve` ask nothing of the application — they read the
+      database's own statistics views, so they work just as well against a .NET Framework, Java or
+      PHP app as against a modern .NET one. True today, costs a paragraph, and it is the cheapest
+      probe for whether legacy shops are an audience (M6).
 - [ ] Decide D3 and set the license expression for the `Momus` tool accordingly.
 - [ ] Tag `v0.1.0`. Verify packages and image.
 
@@ -126,15 +146,47 @@ dates and staleness all need a database under real, changing load.
 
 ### M2.1 Client project
 
-- [ ] New project `src/Momus.Client`, multi-target `net8.0;net9.0;net10.0`, dependencies `Microsoft.EntityFrameworkCore.Relational` (floored per major like Switchboard) and the ASP.NET Core framework reference. Package id `Momus.Client`.
-- [ ] `services.AddMomus()` with `MomusOptions` bound from `Momus:` configuration: `Enabled` (default: Development only), `Endpoint` (`http://localhost:4848`), `ShareConnectionStrings` (default: endpoint is loopback), `FlushSeconds` (5), `AppName` (entry assembly), `Environment`.
-- [ ] Operation scope: `IStartupFilter` inserts middleware first; operation name = endpoint display name or route pattern; `AsyncLocal` scope; `Momus.Operation("name")` API for background work; fallback to `Activity.Current.DisplayName`.
-- [ ] EF Core hooks: `DbCommandInterceptor` (reader / non-query / scalar executed and failed), registered without user code (resolve the open question first). Per execution: fingerprint via `SqlFingerprint`, duration, rows where available, operation, call site.
-- [ ] Call site: first time a (fingerprint, operation) pair is seen in the process, walk the stack and keep the first frame outside `Microsoft.*` / `System.*`; cache forever. An EF `TagWithCallSite` tag wins when present.
-- [ ] Aggregator: bounded dictionary (2,000 keys per window, overflow counter), per key: count, sum/max ms, 8-bucket log2 histogram from 1 ms, rows, max repeats in one operation, errors. Flush on a timer through a `Channel`; the exporter never blocks a request and drops windows when the server is down (one warning log line).
-- [ ] Hello on first flush: app name/version/instance/environment and, when allowed, the target(s) with connection strings.
-- [ ] `samples/Shop.Api`: a tiny ASP.NET Core + EF Core app with a deliberate N+1 and one slow query, for local development and demos.
+> **State: written, partly compiled.** The session that wrote this lost the ability to run any
+> build command partway through, so the boxes below mean "written and reviewed by eye", not
+> "verified". What *is* known to compile, because it was built before the block: `Momus.Core` on
+> all three target frameworks including `Ingest/IngestContract.cs`, and `MomusCommandInterceptor`
+> (its only error was a type that did not exist yet, so every EF Core interceptor signature it
+> overrides resolved). Not yet through a compiler: `OperationQueue`, `Window`, `MomusExporter`,
+> `MomusMiddleware`, `MomusRuntime`, `MomusOperation`, `MomusServiceCollectionExtensions`, and
+> the wiring in `samples/Shop.Api`.
+>
+> **First thing next session: `dotnet build`, then `dotnet test`.** Only then tick anything.
+
+- [x] New project `src/Momus.Client`, multi-target `net8.0;net9.0;net10.0`, dependencies `Microsoft.EntityFrameworkCore.Relational` (floored per major like Switchboard) and the ASP.NET Core framework reference. Package id `Momus.Client`. `Momus.Core` had to be multi-targeted to match (it holds `SqlFingerprint`), which needed one `#if` for `Convert.ToHexStringLower`, a .NET 9 API.
+- [x] `services.AddMomus()` with `MomusOptions` bound from `Momus:` configuration: `Enabled` (default: Development only, and **off** when the environment cannot be determined — the safe direction), `Endpoint` (`http://localhost:4848`), `ShareConnectionStrings` (default: endpoint is loopback or `host.docker.internal`), `FlushSeconds` (5), `AppName` (entry assembly), `Environment`.
+- [x] Operation scope: `IStartupFilter` inserts middleware first; `AsyncLocal` scope that restores its parent rather than clearing it; the name is resolved **lazily on first use**, which is what lets the middleware sit first in the pipeline and still say `GET /orders/{id}` instead of `GET /orders/4711`; falls back to `Activity.Current.DisplayName`.
+- [x] EF Core hooks: `DbCommandInterceptor` on reader / non-query / scalar, executed and failed, plus `DataReaderDisposing` for row counts (a reader's rows are only known once it has been read to the end). Registered with no user code, by the descriptor-rewriting method the open question settled on.
+- [x] Call site: stack walked once per (fingerprint, operation) and cached; first frame outside `Momus.Client`, `Microsoft.*`, `System.*` and the ADO.NET providers; unwraps async state machine names; falls back to `Type.Method` with no PDB. An EF tag comment wins.
+- [x] Aggregator: bounded per operation and per window, both with overflow counters. Per key: count, sum/max ms, 8-bucket log2 histogram, rows, max repeats in one operation, errors. Requests hand a finished operation to a bounded `Channel` (drop-on-full, counted) and return; one background loop folds, a timer flushes, and a dead server costs one warning line and nothing else.
+- [x] Hello on first flush: app name/version/instance/environment and, when allowed, the target(s) with connection strings, learned from the contexts that execute statements.
+- [x] `samples/Shop.Api`: **already built in M1.8.** Now references `Momus.Client` and calls `builder.AddMomus()` after its `AddDbContext`; the compose file sets `Momus__Enabled=true` (the container runs as Production, where the client is off by default), `Momus__Endpoint=http://momus:4848` and `Momus__ShareConnectionStrings=true` (the server is not on loopback here, so sharing has to be asked for).
+- [ ] **Until M2.2 lands, the client posts to an endpoint that does not exist yet** and logs one warning that the server is not answering. That is the expected state, not a bug.
 - [ ] `benchmarks/Momus.Client.Benchmarks` (BenchmarkDotNet): interceptor overhead at 1,000 queries/s; target under 1% CPU and 5 MB. Numbers go into the README.
+- [ ] Tests: a `Momus.Client.Tests` project multi-targeting net8.0/net9.0/net10.0 that asserts `AddMomus()` alone causes an interceptor to fire on all three EF majors. The throwaway probe that answered the open question should become this test, so the answer keeps holding.
+- [ ] Spike, half a day, throwaway: can a `DiagnosticListener` / `ActivitySource` subscriber see
+      command text and duration from `Microsoft.Data.SqlClient` and from Npgsql? See Open questions.
+      Answer it before M2.2 freezes the ingest path — it decides whether M6 and Dapper capture are a
+      port or a rewrite.
+
+**Two deviations from DESIGN.md, both needing a decision.**
+
+1. The background-work API is `MomusOperation.Begin("ImportJob")`, not `Momus.Operation("ImportJob")`.
+   A type called `Momus` inside namespace `Momus.Client` collides with the root `Momus` namespace at
+   every call site. Update DESIGN.md, or find a nicer name.
+2. The documented one-liner is `builder.AddMomus()`, not `builder.Services.AddMomus()`. The service
+   collection alone cannot reliably answer what the configuration or the environment is — the host
+   registers `IConfiguration` as a *factory*, not an instance, so binding the `Momus:` section off
+   the collection silently reads nothing. The `IServiceCollection` overload still exists and takes
+   an optional `IConfiguration`; without one it stays off rather than guessing.
+
+**Contract location.** The ingest DTOs live in `Momus.Core/Ingest/IngestContract.cs` rather than
+being written twice — the client and the server compile against one definition. DESIGN.md shows the
+JSON but does not say where the types live; this is that decision.
 
 ### M2.2 Ingest and store
 
@@ -202,6 +254,94 @@ dates and staleness all need a database under real, changing load.
 - [ ] Merchant of record (Paddle or Lemon Squeezy) for EU VAT. Pricing page.
 - [ ] The tier is shaped by what free users ask for. Do not build ahead of them.
 
+## M6 — Legacy .NET (gated; not ordered against M5)
+
+**Goal.** An application Momus cannot reach today — .NET Framework, EF6, or no ORM at all — reports
+the same operations, query keys and call sites as a modern one, with the same one-line install.
+
+**Gate.** Do not start on a hunch. Start when a real .NET Framework shop has run `momus serve`
+against their database and asked for the app side, or when the M4 launch produces that request more
+than once. Until then the whole cost of keeping the door open is the README line in M1.7 and not
+painting `Momus.Client` further into a corner.
+
+**Why it could be worth it.** Legacy apps have the worst database problems and the least
+observability — years of accreted queries, EF6 lazy loading, no APM because of what APM costs — and
+they are the ones no modern tooling can attach to. The value bar is also lower there: "which page
+ran how many queries" is already a win in a codebase where nobody knows.
+
+**Why it might not be.** Those shops are the least likely to add an in-process interceptor to an
+application that has run for twelve years, and the most likely to have change control between the
+decision and the deployment.
+
+### The three axes, cheapest first
+
+1. **EF6 on modern .NET — small, and separable from everything else.** EF6 has run on modern .NET
+   since 6.3, so this is not the same question as .NET Framework. `DbInterception.Add` is a
+   process-global static registry: one line, no descriptor rewriting, and it catches contexts built
+   by hand outside DI — *better* coverage than the EF Core path. Ships as `Momus.Client.Ef6` (D12).
+   Everything downstream is unchanged. **The risk is not the plumbing, it is the fingerprint**: EF6
+   emits very different SQL from EF Core (`[Extent1]`, `[Project1]`, subquery towers), and joining
+   app SQL to statistics-view SQL is the entire product. Prove it with captured pairs from
+   `tools/FingerprintCapture` against an EF6 context, per the rule in CLAUDE.md — do not assume
+   `SqlFingerprint` already handles it.
+
+2. **No ORM at all (Dapper, raw ADO.NET).** A large share of legacy .NET never used an ORM. Whether
+   this is cheap or impossible is exactly the universal-hook open question above. Settle that first.
+
+3. **.NET Framework / System.Web — a second product, not a target framework.** Nothing in the
+   current host layer survives: `IHostApplicationBuilder`, `IStartupFilter`, `HttpContext`,
+   `IHostedService`, `AddHttpClient`. The good news is that plug-and-play is *easier* there than on
+   modern .NET: `[assembly: PreApplicationStartMethod]` plus `DynamicModuleUtility.RegisterModule`
+   self-registers an `IHttpModule` on package install, with zero lines in `Global.asax` — the
+   Glimpse / ELMAH / MiniProfiler route. `AsyncLocal` exists on 4.6+, `HttpClient` on 4.5+,
+   `HostingEnvironment.QueueBackgroundWorkItem` gives the export loop, and `IRegisteredObject`
+   flushes before an app-pool recycle. Floor at `net472`.
+
+### What actually has to move (the seam)
+
+Most of `Momus.Client` is already host-neutral and does not know it: `Window`, `OperationQueue`,
+`CallSites`, `MomusOptions`, and the recording logic inside `MomusCommandInterceptor`. The only real
+coupling is `OperationContext`'s `HttpContext?` constructor parameter, used solely to resolve the
+operation name — a name-resolver delegate is the whole seam. `Microsoft.Extensions.*` is
+netstandard2.0, so even `MomusExporter` is more portable than it looks.
+
+- [ ] Move the host-neutral pieces into `Momus.Core` (which already holds `SqlFingerprint` and the
+      ingest contract) rather than inventing a fourth package. Leave the exporter and the host wiring
+      per-host.
+- [ ] Add `netstandard2.0` to `Momus.Core`. `required`, records and collection expressions need
+      shims; `System.Text.Json` becomes a package reference. Mechanical, but it taxes every later
+      Core change — which is why it is worth keeping Core on portable APIs in the meantime, where the
+      portable one is equally good.
+
+### Costs that are not code, and are the real schedule
+
+- **CI is ubuntu-only** — all three jobs in `.github/workflows/ci.yml`. A System.Web project probably
+  still *compiles* cross-platform via `Microsoft.NETFramework.ReferenceAssemblies`, but it cannot be
+  **run or tested** anywhere but Windows. Verify the compile claim rather than assuming it, and
+  decide how `dotnet build` at the repo root stays green on a Mac: a solution filter for the ubuntu
+  jobs, or conditioning the project on `'$(OS)' == 'Windows_NT'`.
+- **A second sample app and a second demo stack.** `samples/Shop.Api` is Linux and Kestrel; none of it
+  transfers. Manual IIS testing is where the time goes.
+- **Call sites degrade.** `new StackTrace(true)` works, but without portable PDBs deployed it gives
+  method names, not `OrdersHandler.cs:42` — and D6 says mapping to code is what ranks above
+  everything else. Measure what survives before promising it.
+
+### The default that does not transfer
+
+D5 keeps the client off outside Development. That is close to useless for legacy: the reason a
+twelve-year-old app needs this is that the problem only appears in production, and those shops
+usually have no development environment carrying real load. Turning it on in production raises the
+overhead budget and the trust story at the same time, in exactly the audience least willing to
+accept either. Decide this before writing the client, not after.
+
+There is a zero-install fallback that dodges the whole question and should be documented either way:
+set `Application Name=` per app in the connection string and attribute statistics-view rows by app.
+Far less than per-endpoint attribution, but it needs no deployment and no package.
+
+---
+
 ## Later / not planned
 
-OTLP ingestion. Dapper and raw ADO.NET capture through provider activity sources. MySQL provider. Hosted version. All deliberately out of 1.0 (D5).
+OTLP ingestion. MySQL provider. Hosted version. All deliberately out of 1.0 (D5). Dapper and raw
+ADO.NET capture moved from here into M6, where it is one of the three axes and depends on the
+universal-hook open question.

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Momus.Client;
 using Shop.Api;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +36,11 @@ builder.Services.AddSingleton(sp => new LoadGenerator(
     builder.Configuration["Traffic"] ?? "off"));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LoadGenerator>());
 builder.Services.AddScoped<Workload>();
+
+// The other half. One line, after AddDbContext — that ordering is not a style preference: the
+// client reaches every context by rewriting the DbContextOptions registrations, so it can only
+// see the ones already registered. It will say so at startup if it finds none.
+builder.AddMomus();
 
 var app = builder.Build();
 

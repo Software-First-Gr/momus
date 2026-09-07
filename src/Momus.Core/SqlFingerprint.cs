@@ -87,7 +87,11 @@ public static class SqlFingerprint
     private static string Hash(string normalized)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+#if NET9_0_OR_GREATER
         return Convert.ToHexStringLower(bytes.AsSpan(0, 8));
+#else
+        return Convert.ToHexString(bytes.AsSpan(0, 8)).ToLowerInvariant();
+#endif
     }
 
     // ---- 1. tokenize ------------------------------------------------------------------

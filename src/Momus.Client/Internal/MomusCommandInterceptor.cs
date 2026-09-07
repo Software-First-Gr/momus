@@ -1,0 +1,150 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Momus.Core;
+
+namespace Momus.Client.Internal;
+
+/// <summary>
+/// The one place the client touches your data access. Every statement EF Core executes is
+/// fingerprinted, timed and attributed to the operation that ran it. Nothing is read from the
+/// command's parameters and nothing is read from the results — only the statement's shape.
+/// </summary>
+internal sealed class MomusCommandInterceptor(
+    MomusOptions options,
+    TargetRegistry targets,
+    OperationQueue queue) : DbCommandInterceptor
+{
+    /// <summary>Fingerprints by command text. EF sends the same handful of strings over and over.</summary>
+    private readonly ConcurrentDictionary<string, SqlFingerprint.Result> _fingerprints = new();
+
+    private const int MaxFingerprints = 5_000;
+
+    // ---- executed ----------------------------------------------------------------------
+
+    public override DbDataReader ReaderExecuted(DbCommand command, CommandExecutedEventData data, DbDataReader result)
+    {
+        Record(command, data, rows: 0, failed: false);
+        return result;
+    }
+
+    public override ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command, CommandExecutedEventData data, DbDataReader result, CancellationToken ct = default)
+    {
+        Record(command, data, rows: 0, failed: false);
+        return ValueTask.FromResult(result);
+    }
+
+    public override int NonQueryExecuted(DbCommand command, CommandExecutedEventData data, int result)
+    {
+        Record(command, data, rows: result, failed: false);
+        return result;
+    }
+
+    public override ValueTask<int> NonQueryExecutedAsync(
+        DbCommand command, CommandExecutedEventData data, int result, CancellationToken ct = default)
+    {
+        Record(command, data, rows: result, failed: false);
+        return ValueTask.FromResult(result);
+    }
+
+    public override object? ScalarExecuted(DbCommand command, CommandExecutedEventData data, object? result)
+    {
+        Record(command, data, rows: 1, failed: false);
+        return result;
+    }
+
+    public override ValueTask<object?> ScalarExecutedAsync(
+        DbCommand command, CommandExecutedEventData data, object? result, CancellationToken ct = default)
+    {
+        Record(command, data, rows: 1, failed: false);
+        return ValueTask.FromResult(result);
+    }
+
+    // ---- failed ------------------------------------------------------------------------
+    // A statement that threw is worth more than one that worked, so it is recorded too.
+
+    public override void CommandFailed(DbCommand command, CommandErrorEventData data) =>
+        Record(command, data, rows: 0, failed: true);
+
+    public override Task CommandFailedAsync(DbCommand command, CommandErrorEventData data, CancellationToken ct = default)
+    {
+        Record(command, data, rows: 0, failed: true);
+        return Task.CompletedTask;
+    }
+
+    // ---- rows --------------------------------------------------------------------------
+
+    /// <summary>
+    /// A reader's row count is only known once it has been read to the end, which happens after
+    /// the execution was already recorded — so the rows are added to the entry afterwards.
+    /// </summary>
+    public override InterceptionResult DataReaderDisposing(
+        DbCommand command, DataReaderDisposingEventData data, InterceptionResult result)
+    {
+        var operation = OperationContext.Current;
+        if (operation is not null && data.ReadCount > 0 && command.CommandText is { Length: > 0 } text)
+        {
+            var fingerprint = Fingerprint(text);
+            var callSite = CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+            operation.AddRows(fingerprint.Key, callSite, data.ReadCount);
+        }
+
+        return result;
+    }
+
+    // ---- the work ----------------------------------------------------------------------
+
+    private void Record(DbCommand command, CommandEndEventData data, long rows, bool failed)
+    {
+        var text = command.CommandText;
+        if (string.IsNullOrEmpty(text)) return;
+
+        var fingerprint = Fingerprint(text);
+        var durationMs = data.Duration.TotalMilliseconds;
+        var operation = OperationContext.Current;
+
+        if (operation is not null)
+        {
+            var callSite = CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+            operation.Record(fingerprint.Key, callSite, fingerprint.Text,
+                durationMs, rows, failed, options.MaxKeysPerOperation);
+
+            targets.Register(data.Context);
+            return;
+        }
+
+        // Outside any operation: a hosted service, a startup migration, a background timer. The
+        // timing still belongs in the query stats; it just is not an operation of its own.
+        var loose = OperationContext.Begin("ambient", null, null);
+        try
+        {
+            var callSite = CallSites.For(fingerprint.Key, loose.Name, fingerprint.Tag);
+            loose.Record(fingerprint.Key, callSite, fingerprint.Text,
+                durationMs, rows, failed, options.MaxKeysPerOperation);
+            targets.Register(data.Context);
+            queue.Enqueue(loose.Complete(countsAsOperation: false));
+        }
+        finally
+        {
+            OperationContext.End(loose);
+        }
+    }
+
+    /// <summary>
+    /// Fingerprints are cached by command text: EF sends the same handful of strings over and over,
+    /// and hashing each one every time would be the client's largest cost by far.
+    /// </summary>
+    private SqlFingerprint.Result Fingerprint(string text)
+    {
+        if (_fingerprints.TryGetValue(text, out var cached)) return cached;
+
+        var result = SqlFingerprint.Analyze(text);
+
+        // Past the ceiling, keep working but stop growing: a pathological app that builds SQL by
+        // string concatenation must not turn this cache into a leak.
+        if (_fingerprints.Count < MaxFingerprints) _fingerprints.TryAdd(text, result);
+
+        return result;
+    }
+}

@@ -59,6 +59,13 @@ services:
       MomusUrl: http://localhost:4848
       # Start with traffic already running, so Momus has something to find by the time you look.
       Traffic: light
+      # The container runs as Production, where the client is off by default. This demo is the one
+      # place that deliberately turns it on: it exists to show both halves at once.
+      Momus__Enabled: "true"
+      Momus__Endpoint: http://momus:4848
+      # The server is not on loopback here, so sharing has to be asked for explicitly. It lets
+      # Momus scan the same database without the connection string being configured twice.
+      Momus__ShareConnectionStrings: "true"
       ASPNETCORE_URLS: http://+:8080
     ports:
       - "8080:8080"

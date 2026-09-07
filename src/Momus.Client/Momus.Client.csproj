@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- This one lives inside other people's applications, so it goes back as far as the
+         supported runtimes do. Everything else in Momus targets the newest only. -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Momus.Client</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package">
+    <PackageId>Momus.Client</PackageId>
+    <Description>The application half of Momus. One line — services.AddMomus() — and your app reports which endpoint ran which query, how often per request and from which line of code, to a Momus server that already knows what the database thinks. No literals, parameter values or result rows ever leave the process: only normalized statement text and aggregates. Off by default outside Development.</Description>
+    <PackageTags>$(PackageTags);efcore;aspnetcore;instrumentation;n+1</PackageTags>
+    <EnablePackageValidation>true</EnablePackageValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Floored per major, never rolled forward: the app decides which EF Core it runs. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
+  </ItemGroup>
+
+</Project>
