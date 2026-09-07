@@ -35,7 +35,9 @@ The design behind all of this is `docs/DESIGN.md`.
 | D9 | 2026-09-06 | Repo public since 2026-09-06. Quiet until M1 runs end to end; launch post after M4. |
 | D10 | 2026-09-06 | Money: free tier never gates checks, insights, MCP or CLI. Pro (self-hosted, offline license key, per server) gates retention, multiple apps/targets, alerts, login, white-label report. Billing is built only after strangers use the free tier daily (M5, not before). |
 | D11 | 2026-09-06 | Package ids stay product-first: `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer`, later `Momus.Client`. No `SoftwareFirst.` prefix, unlike `SoftwareFirst.Switchboard` (where the bare id was free and prefixing was a choice). Momus is a product, not a company utility: it owns a CLI command (`dotnet tool install -g Momus` -> `momus`, an id/command split a prefix would force), a Docker image and a multi-package family where `SoftwareFirst.Momus.Client.Switchboard` is a cost Switchboard never paid. Namespace protection comes from an ID prefix reservation instead, not from the id. |
-| D12 | 2026-09-07 | **Legacy .NET support, if built, is separate projects in this repo — never extra target frameworks on `Momus.Client`.** `Momus.Client` carries a `FrameworkReference` to ASP.NET Core, so it cannot also be a `net472` System.Web host; and adding `EntityFramework` 6.x to it would push EF6 onto every EF Core user. So `Momus.Client.Ef6` (the EF6 hook, usable on modern .NET *and* on Framework) and `Momus.Client.Framework` (the System.Web host, Windows only), with the host-neutral capture pieces moved down into `Momus.Core` rather than into a fourth package. Same repo, same version, same tag (D2); the same adapter shape M4 already plans for `Momus.Client.Switchboard`. This settles the **layout**, not whether to build it — that is M6 and it is gated. |
+| D12 | 2026-09-07 | **The quarantine line is the runtime, not the ORM, and nothing crosses it.** EF6-on-modern-.NET is not legacy: `src/Momus.Client.Ef6` joins the modern family (net8/9/10, references `Momus.Client`, ships on the modern tag), exactly like the planned `Momus.Client.Switchboard` — and it is buildable and testable on Linux today. Everything that needs .NET Framework goes under `legacy/`: its own solution, its own `Directory.Build.props` that does **not** chain to the root (so it inherits no version, no `LangVersion`, no package metadata, no `Nullable`), its own Windows CI job, its own `legacy-v*` tag. It references no Momus project and consumes no Momus package. `Momus.sln` never contains a legacy project, so `dotnet build` at the repo root stays green on a Mac and a contributor to the modern side never opens a 4.7.2 file. Amends D2: one tag ships the modern family, legacy ships on its own, because their cadences genuinely differ — legacy moves roughly never once it works. |
+| D13 | 2026-09-07 | **`SqlFingerprint` is the one thing the quarantine cannot duplicate.** If the legacy copy drifts by a single rule, the join fails *silently*: no error, an empty Queries tab, and nobody knows why. So `legacy/` compiles `src/Momus.Core/SqlFingerprint.cs` as a **linked source file** (`<Compile Include="../../src/Momus.Core/SqlFingerprint.cs" Link="..." />`) — no package reference, no assembly coupling, no `netstandard2.0` on `Momus.Core`, and a build break the moment someone puts a modern-only API in that one file. The legacy tests run the **same** fixture pairs from `tests/Momus.Tests/Fixtures/`. Everything else is deliberately written twice, ingest DTOs included: the contract being frozen at v1 and additive-only (M2.2) is what makes duplication safe, and a golden JSON payload kept as a shared fixture — parsed by the modern server's tests, emitted by the legacy client's tests — is what keeps it honest without either side referencing the other. |
+| D14 | 2026-09-07 | **Verdict on legacy, after evaluating it: EF6 in, System.Web out (for now), and the free half done regardless.** (a) `Momus.Client.Ef6` is promoted out of M6 into **M4**'s adapter list — 2-4 days, Linux-testable, and it reaches teams who migrated the runtime but kept the ORM, i.e. the existing audience with a different data layer. (b) `Momus.Client.Framework` stays gated on a falsifiable trigger: **three unrelated .NET Framework shops running `momus serve` and asking for the app side.** (c) The M1.7 README line ships either way. Three things decided it. The **contract keeps growing** — M3 alone adds `transactions` and `pool`, so every client feature to 1.0 is either ported twice or a permanent hole in the legacy product; "additive-only" protects the server, not the second client. The **incumbents are strongest exactly there** — Application Insights' System.Web SDK, the New Relic and Datadog .NET Framework agents, and `MiniProfiler.Mvc5` all do per-request SQL with call sites, and have for a decade; what none of them do is join to the database's own statistics views, and *that half already works for those shops with zero legacy code*. And the **author has no .NET Framework app**, so there is no dogfooding to offset a build loop with no `docker compose up`, no Windows machine (darwin) and 3-6 weeks of evenings — against M2/M3/M4 being the whole remaining path to a first user. |
 
 ## Open questions
 
@@ -51,9 +53,13 @@ The design behind all of this is `docs/DESIGN.md`.
   settled, where the documented-looking answer turned out to be false. If it holds it changes the
   cost of M6 and of the Dapper line under "Later".
 
-- **Is legacy .NET an audience for Momus?** Unknown, and cheap to find out: `scan` and `serve` already
-  work for those shops today — they read the database, not the app — so the probe is one honest line
-  in the README (M1.7) and then counting who turns up. M6 is gated on the answer.
+- ~~**Is legacy .NET an audience for Momus?**~~ **Evaluated 2026-09-07, see D14.** Split in two, and
+  the halves got opposite answers. EF6-on-modern-.NET is worth days, not weeks, and moved into M4.
+  The .NET Framework client did not survive the evaluation and stays gated on a countable trigger:
+  three unrelated shops running `momus serve` and asking for the app side. The probe costs one honest
+  line in the README (M1.7) — `scan` and `serve` already work for those shops, because they read the
+  database and not the app — and then counting who turns up. Revisit only when the count says to,
+  or if the author ever inherits a .NET Framework app, which flips the dogfooding argument.
 
 - **Ranking weights** for "Fix first" (severity × traffic share × recency). Start simple, tune on real data (M3).
 - **Pro price point.** Anchor around a consultant hour; decide at M5 with real users.
@@ -242,6 +248,19 @@ JSON but does not say where the types live; this is that decision.
 - [ ] README rewritten around the one-line install; `.mcp.json` snippet; benchmark numbers; screenshots.
 - [ ] Landing page on softwarefirst.gr in the style of the Switchboard page.
 - [ ] Optional adapters `Momus.Client.Switchboard` and `Momus.Client.MediatR` (one pipeline behavior each naming the operation).
+- [ ] `Momus.Client.Ef6` (promoted here from M6 by D14). EF6 has run on modern .NET since 6.3, so
+      this reaches apps that migrated the runtime and kept the ORM. `DbInterception.Add` is a
+      process-global static registry: one line, no descriptor rewriting, and it catches contexts
+      built by hand outside DI — *better* coverage than the EF Core path. net8/9/10, references
+      `Momus.Client`, ships on the modern tag (D12); everything downstream is unchanged.
+  - [ ] **Do this day first, before committing to the rest.** EF6 emits very different SQL from EF
+        Core (`[Extent1]`, `[Project1]`, subquery towers) and the app-to-statistics-view join is the
+        entire product. Run `tools/FingerprintCapture` against an EF6 context and see what
+        `SqlFingerprint` does with real pairs, per the rule in CLAUDE.md. If it needs new
+        normalization rules, that is the actual cost of this item.
+  - [ ] Verify the provider story on .NET Core (EF6's SQL Server provider) so `samples/Shop.Ef6` can
+        live in the existing compose stack and run in the ubuntu CI. If that holds, this axis has a
+        real demo loop — which is most of why it is here and M6 is not.
 - [ ] Launch: r/dotnet, Show HN, awesome-dotnet PR, a post on the three insights with real screenshots.
 - [ ] Tag `v1.0.0`.
 
@@ -254,64 +273,77 @@ JSON but does not say where the types live; this is that decision.
 - [ ] Merchant of record (Paddle or Lemon Squeezy) for EU VAT. Pricing page.
 - [ ] The tier is shaped by what free users ask for. Do not build ahead of them.
 
-## M6 — Legacy .NET (gated; not ordered against M5)
+## M6 — .NET Framework client (gated; evaluated and deferred, D14)
 
-**Goal.** An application Momus cannot reach today — .NET Framework, EF6, or no ORM at all — reports
-the same operations, query keys and call sites as a modern one, with the same one-line install.
+**Goal.** A System.Web application — WebForms, MVC5, Web API 2 — reports the same operations, query
+keys and call sites as a modern one, with the same install-and-done promise.
 
-**Gate.** Do not start on a hunch. Start when a real .NET Framework shop has run `momus serve`
-against their database and asked for the app side, or when the M4 launch produces that request more
-than once. Until then the whole cost of keeping the door open is the README line in M1.7 and not
-painting `Momus.Client` further into a corner.
+**Status: evaluated 2026-09-07, deliberately not started.** See D14 for the full reasoning. The two
+axes that were once part of this milestone have moved out: **EF6 went to M4** as an adapter, because
+it runs on modern .NET and costs days rather than weeks; **Dapper / raw ADO.NET** went back to
+"Later", where it depends on the universal-hook open question. What is left here is the expensive
+axis alone.
 
-**Why it could be worth it.** Legacy apps have the worst database problems and the least
-observability — years of accreted queries, EF6 lazy loading, no APM because of what APM costs — and
-they are the ones no modern tooling can attach to. The value bar is also lower there: "which page
-ran how many queries" is already a win in a codebase where nobody knows.
+**Gate — falsifiable, not a feeling.** Start when **three unrelated .NET Framework shops have run
+`momus serve` against their database and asked for the app side.** Below three, the package would
+have had approximately zero users, and that is worth learning for the price of one README paragraph
+rather than six weeks. Until then the entire cost of keeping the door open is M1.7's README line and
+not painting `Momus.Client` further into a corner.
 
-**Why it might not be.** Those shops are the least likely to add an in-process interceptor to an
-application that has run for twelve years, and the most likely to have change control between the
-decision and the deployment.
+**What is already free for that audience, and it is most of the value.** `scan` and `serve` ask
+nothing of the application: a shop on 4.8 with WebForms gets every DB-side finding, history,
+first-seen dates and staleness today. The client would add the app-side half — per-operation
+attribution and call sites — on top of a differentiator that already works for them.
 
-### The three axes, cheapest first
+**Why it is tempting anyway.** Plug-and-play is genuinely *easier* there than on modern .NET:
+`[assembly: PreApplicationStartMethod]` plus `DynamicModuleUtility.RegisterModule` self-registers an
+`IHttpModule` on package install, with zero lines in `Global.asax` — the Glimpse / ELMAH /
+MiniProfiler route. `AsyncLocal` exists on 4.6+, `HttpClient` on 4.5+,
+`HostingEnvironment.QueueBackgroundWorkItem` gives the export loop, and `IRegisteredObject` flushes
+before an app-pool recycle. Floor at `net472`. It is a satisfying hack; that is not a reason.
 
-1. **EF6 on modern .NET — small, and separable from everything else.** EF6 has run on modern .NET
-   since 6.3, so this is not the same question as .NET Framework. `DbInterception.Add` is a
-   process-global static registry: one line, no descriptor rewriting, and it catches contexts built
-   by hand outside DI — *better* coverage than the EF Core path. Ships as `Momus.Client.Ef6` (D12).
-   Everything downstream is unchanged. **The risk is not the plumbing, it is the fingerprint**: EF6
-   emits very different SQL from EF Core (`[Extent1]`, `[Project1]`, subquery towers), and joining
-   app SQL to statistics-view SQL is the entire product. Prove it with captured pairs from
-   `tools/FingerprintCapture` against an EF6 context, per the rule in CLAUDE.md — do not assume
-   `SqlFingerprint` already handles it.
+**Why it is not worth it yet.** Nothing in the current host layer survives —
+`IHostApplicationBuilder`, `IStartupFilter`, `HttpContext`, `IHostedService`, `AddHttpClient` — so it
+is a second product, not a target framework. The incumbents are strongest precisely here (D14). The
+contract keeps growing under it (D14). And there is no dogfooding: the author maintains no .NET
+Framework app, so every edit needs a Windows VM and there is no `docker compose up` to check it with.
 
-2. **No ORM at all (Dapper, raw ADO.NET).** A large share of legacy .NET never used an ORM. Whether
-   this is cheap or impossible is exactly the universal-hook open question above. Settle that first.
+### What crosses the line: the wire, and one file
 
-3. **.NET Framework / System.Web — a second product, not a target framework.** Nothing in the
-   current host layer survives: `IHostApplicationBuilder`, `IStartupFilter`, `HttpContext`,
-   `IHostedService`, `AddHttpClient`. The good news is that plug-and-play is *easier* there than on
-   modern .NET: `[assembly: PreApplicationStartMethod]` plus `DynamicModuleUtility.RegisterModule`
-   self-registers an `IHttpModule` on package install, with zero lines in `Global.asax` — the
-   Glimpse / ELMAH / MiniProfiler route. `AsyncLocal` exists on 4.6+, `HttpClient` on 4.5+,
-   `HostingEnvironment.QueueBackgroundWorkItem` gives the export loop, and `IRegisteredObject`
-   flushes before an app-pool recycle. Floor at `net472`.
+Under D12/D13 the modern side gives up **nothing**. In particular `Momus.Core` does *not* gain
+`netstandard2.0` — an earlier draft of this section proposed exactly that (move the host-neutral
+pieces down into Core, multi-target it, shim `required` and records) and it was wrong: it would tax
+every future Core change forever so that a gated, maybe-never milestone could reuse ~400 lines. The
+legacy tree writes its own queue, its own window, its own exporter, its own DTOs. That duplication is
+the price of the isolation, and it is the right trade because the wire contract is frozen.
 
-### What actually has to move (the seam)
+So the entire contact surface is:
 
-Most of `Momus.Client` is already host-neutral and does not know it: `Window`, `OperationQueue`,
-`CallSites`, `MomusOptions`, and the recording logic inside `MomusCommandInterceptor`. The only real
-coupling is `OperationContext`'s `HttpContext?` constructor parameter, used solely to resolve the
-operation name — a name-resolver delegate is the whole seam. `Microsoft.Extensions.*` is
-netstandard2.0, so even `MomusExporter` is more portable than it looks.
+- `POST /api/v1/ingest`, the frozen v1 JSON shape. The server cannot tell which client posted.
+- `SqlFingerprint.cs`, linked as source (D13).
+- The fixture files under `tests/Momus.Tests/Fixtures/`, read by both test suites.
 
-- [ ] Move the host-neutral pieces into `Momus.Core` (which already holds `SqlFingerprint` and the
-      ingest contract) rather than inventing a fourth package. Leave the exporter and the host wiring
-      per-host.
-- [ ] Add `netstandard2.0` to `Momus.Core`. `required`, records and collection expressions need
-      shims; `System.Text.Json` becomes a package reference. Mechanical, but it taxes every later
-      Core change — which is why it is worth keeping Core on portable APIs in the meantime, where the
-      portable one is equally good.
+- [ ] Layout: `legacy/Momus.Legacy.sln`, `legacy/Directory.Build.props` (no `Import` of the root —
+      MSBuild stops at the nearest one, which is the isolation), `legacy/src/Momus.Client.Framework`,
+      `legacy/samples/Shop.Web`, `legacy/tests/`.
+- [ ] A `windows-latest` job in CI that builds and tests `Momus.Legacy.sln` only, and a
+      `legacy-v*` tag trigger that publishes `Momus.Client.Framework` alone.
+- [ ] Golden-payload contract test in both suites, per D13.
+
+### Distribution: there is no legacy image
+
+Worth stating because it is the first thing that sounds right and is not. The **client** is a NuGet
+package installed into someone else's application — there is nothing to containerize. The **server**
+is already modern, already one image, and does not care what posts to it: an IIS app on Windows
+Server 2016 and a net10 app post the same JSON to the same endpoint. Adding a second image would
+mean maintaining two servers to serve one contract.
+
+What that audience may actually need is the opposite of a container:
+
+- [ ] Investigate `momus serve` as a Windows Service — `win-x64` self-contained single-file publish
+      plus `sc.exe create`. `MomusServer.RunAsync(ServerOptions, CancellationToken)` is already the
+      entry point, so this is packaging, not architecture. Many .NET Framework shops have no Docker
+      at all, and telling them to install Docker Desktop to try a diagnostics tool loses them.
 
 ### Costs that are not code, and are the real schedule
 
@@ -320,8 +352,18 @@ netstandard2.0, so even `MomusExporter` is more portable than it looks.
   **run or tested** anywhere but Windows. Verify the compile claim rather than assuming it, and
   decide how `dotnet build` at the repo root stays green on a Mac: a solution filter for the ubuntu
   jobs, or conditioning the project on `'$(OS)' == 'Windows_NT'`.
-- **A second sample app and a second demo stack.** `samples/Shop.Api` is Linux and Kestrel; none of it
-  transfers. Manual IIS testing is where the time goes.
+- **The legacy demo cannot be a compose stack, and this is the hard one.** `samples/Shop.Api` is
+  Linux and Kestrel; none of it transfers. A .NET Framework sample needs a Windows container
+  (`mcr.microsoft.com/dotnet/framework/aspnet:4.8`, multi-GB), and Docker Desktop runs Linux *or*
+  Windows containers, not both in one stack — so it could not sit beside the Postgres container even
+  on Windows. On a Mac it cannot run at all. So the legacy demo is a Windows VM or a real IIS box,
+  driven by hand. `docker compose up` — the thing CLAUDE.md calls the fastest way to see a change
+  work — simply does not exist for this axis. **Budget the schedule around that, not around the code.**
+- **Mitigation: axis 1 keeps a Linux demo.** EF6 runs on modern .NET, so a `samples/Shop.Ef6` on net8
+  with EF6 against SQL Server could live in the existing compose stack and be exercised by the
+  ubuntu CI. Verify the provider story first (EF6's SQL Server provider on .NET Core) rather than
+  assuming it. If it holds, the cheap axis is also the only one with a real demo — another reason to
+  do it first and separately.
 - **Call sites degrade.** `new StackTrace(true)` works, but without portable PDBs deployed it gives
   method names, not `OrdersHandler.cs:42` — and D6 says mapping to code is what ranks above
   everything else. Measure what survives before promising it.
@@ -342,6 +384,10 @@ Far less than per-endpoint attribution, but it needs no deployment and no packag
 
 ## Later / not planned
 
-OTLP ingestion. MySQL provider. Hosted version. All deliberately out of 1.0 (D5). Dapper and raw
-ADO.NET capture moved from here into M6, where it is one of the three axes and depends on the
-universal-hook open question.
+OTLP ingestion. MySQL provider. Hosted version. All deliberately out of 1.0 (D5).
+
+**Dapper and raw ADO.NET capture** stays here rather than in M6 (D14 took it back out of that
+milestone): it is not a legacy question at all — plenty of modern apps never use an ORM — and whether
+it is cheap or impossible is settled by the universal-hook open question, not by anything about .NET
+Framework. Measure that first (the M2.1 spike); if a `DiagnosticListener` / `ActivitySource`
+subscriber can see command text and duration, this becomes small and stops being "later".
