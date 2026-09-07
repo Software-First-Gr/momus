@@ -1,0 +1,264 @@
+@page
+@model QueriesModel
+@{
+    ViewData["Title"] = "Momus — queries";
+    ViewData["Tab"] = "queries";
+    ViewData["HeaderStatus"] = Model.HeaderStatus;
+}
+
+@if (!Model.AnyAppReported)
+{
+    <section>
+        <h1>No application is reporting yet</h1>
+        <p class="lede">
+            Momus already reads the database side. This tab needs the other half: what your code asked
+            for, from which endpoint, at which line. Three steps, and none of them is a code change.
+        </p>
+
+        <p class="small muted">Add the package —</p>
+        <pre>dotnet add package Momus.Client</pre>
+
+        <p class="small muted">— add one line, <em>after</em> your <code>AddDbContext</code> calls —</p>
+        <pre>builder.AddMomus();</pre>
+
+        <p class="small muted">
+            — then hit some endpoints. On Development it is on by default and reports to
+            <code>http://localhost:@Model.Port</code>; anywhere else set <code>Momus__Enabled=true</code>.
+        </p>
+
+        @if (Model.Selected is not null)
+        {
+            <p class="small muted" style="margin-top:18px">
+                Meanwhile the database half is alive: scanning <strong>@Model.Selected.Name</strong>,
+                last scan @Humanize.Ago(Model.Selected.LastScanAt).
+                <a href="/">See what it found.</a>
+            </p>
+        }
+    </section>
+}
+else
+{
+    <section>
+        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+            <div>
+                <h1>Queries</h1>
+                <p class="lede" style="margin:0">
+                    The last @($"{QueriesModel.Window.TotalMinutes:N0} min") as the app saw it,
+                    joined to the newest scan of
+                    @(Model.Selected?.Name ?? "no target") on the statement fingerprint.
+                </p>
+            </div>
+            <div class="grow" style="flex:1"></div>
+
+            @if (Model.Targets.Count > 1)
+            {
+                <form method="get" style="display:flex;gap:8px;align-items:center">
+                    <select name="target" onchange="this.form.submit()" style="width:auto">
+                        @foreach (var target in Model.Targets)
+                        {
+                            <option value="@target.Id" selected="@(target.Id == Model.Selected!.Id)">@target.Name</option>
+                        }
+                    </select>
+                </form>
+            }
+        </div>
+
+        @if (Model.ClientIsQuiet)
+        {
+            <p class="small" style="margin-top:14px">
+                <span class="pill stale">NO WINDOW</span>
+                <span class="muted">
+                    The last window arrived @Humanize.Ago(Model.LatestWindow?.ReceivedAt). The app is
+                    stopped, or the client cannot reach this server.
+                </span>
+            </p>
+        }
+        else if (Model.LatestWindow is { Overflow: > 0 } window)
+        {
+            <p class="small" style="margin-top:14px">
+                <span class="pill medium">UNATTRIBUTED</span>
+                <span class="muted">
+                    @window.Overflow.ToString("N0") execution(s) in the last window went over the client's
+                    key limit and are not on any row below.
+                </span>
+            </p>
+        }
+    </section>
+
+    <section>
+        <h2>Statements</h2>
+
+        @if (Model.Rows.Count == 0)
+        {
+            <p class="small muted">
+                The app has reported, but not a single statement in the last
+                @($"{QueriesModel.Window.TotalMinutes:N0} min"). Send it some traffic.
+            </p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                <tr>
+                    <th style="width:38%">Query</th>
+                    <th>Operation</th>
+                    <th style="text-align:right">Calls/min</th>
+                    <th style="text-align:right">App mean</th>
+                    <th style="text-align:right">DB mean</th>
+                    <th style="width:22%">Database says</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in Model.Rows)
+                {
+                    <tr>
+                        <td>
+                            <code>@Truncate(row.Sample, 110)</code>
+                            @if (row.MaxRepeats >= 10)
+                            {
+                                <div style="margin-top:4px">
+                                    <span class="pill high">×@row.MaxRepeats PER OPERATION</span>
+                                </div>
+                            }
+                            @if (row.App is { Errors: > 0 } failing)
+                            {
+                                <div style="margin-top:4px">
+                                    <span class="pill medium">@failing.Errors.ToString("N0") FAILED</span>
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            @if (row.App is null)
+                            {
+                                <span class="muted"><em>not seen from any app</em></span>
+                            }
+                            else
+                            {
+                                <div>@row.App.Operation</div>
+                                @if (row.App.OperationCount > 1)
+                                {
+                                    <div class="muted small">+@(row.App.OperationCount - 1) more</div>
+                                }
+                                @if (row.App.CallSite is { } site)
+                                {
+                                    <div style="margin-top:3px"><span class="chip">@site</span></div>
+                                }
+                            }
+                        </td>
+                        <td style="text-align:right">
+                            @(row.App is null ? "—" : row.App.CallsPerMinute.ToString("N0"))
+                        </td>
+                        <td style="text-align:right">
+                            @(row.App is null ? "—" : $"{row.App.MeanMs:N1} ms")
+                        </td>
+                        <td style="text-align:right">
+                            @if (row.Database is { MeanMs: > 0 } db)
+                            {
+                                <div>@($"{db.MeanMs:N1} ms")</div>
+                                <div class="muted small">@db.Measure</div>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td>
+                            @if (row.Database is { } says)
+                            {
+                                <span class="pill @Humanize.Css(says.Severity)">@Humanize.Label(says.Severity)</span>
+                                <div class="muted small" style="margin-top:4px">@says.Title</div>
+                                <div class="muted small">@Humanize.Since(says.FirstSeen)</div>
+                            }
+                            else
+                            {
+                                <span class="muted small">not ranked by the database</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            @if (Model.HiddenRows > 0)
+            {
+                <p class="small muted" style="margin-top:12px">
+                    @Model.HiddenRows more statement(s) not shown.
+                </p>
+            }
+        }
+    </section>
+
+    @if (Model.Operations.Count > 0)
+    {
+        <section>
+            <h2>Operations</h2>
+            <table>
+                <thead>
+                <tr>
+                    <th>Operation</th>
+                    <th style="text-align:right">Calls</th>
+                    <th style="text-align:right">Mean</th>
+                    <th style="text-align:right">Queries each</th>
+                    <th style="text-align:right">Worst</th>
+                    <th style="text-align:right">In the database</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var operation in Model.Operations)
+                {
+                    <tr>
+                        <td>
+                            @operation.Name
+                            @if (operation.Kind != "http")
+                            {
+                                <span class="chip" style="margin-left:6px">@operation.Kind</span>
+                            }
+                        </td>
+                        <td style="text-align:right">@operation.Calls.ToString("N0")</td>
+                        <td style="text-align:right">@($"{operation.MeanMs:N0} ms")</td>
+                        <td style="text-align:right">@($"{operation.MeanQueries:N1}")</td>
+                        <td style="text-align:right">@operation.QueryMax.ToString("N0")</td>
+                        <td style="text-align:right">@($"{operation.DbShare:P0}")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+            <p class="small muted" style="margin-top:12px">
+                "Queries each" is the average number of statements one call runs. A route that runs
+                forty is an N+1 whatever the database thinks of each one.
+            </p>
+        </section>
+    }
+
+    <section>
+        <h2>Reporting</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Application</th>
+                <th>Version</th>
+                <th>Environment</th>
+                <th style="text-align:right">Instances</th>
+                <th style="text-align:right">Last seen</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var app in Model.Apps)
+            {
+                <tr>
+                    <td>@app.Name</td>
+                    <td><span class="chip">@(app.Version ?? "unknown")</span></td>
+                    <td class="muted">@(app.Environment ?? "—")</td>
+                    <td style="text-align:right">@app.InstanceCount</td>
+                    <td style="text-align:right" class="muted">@Humanize.Ago(app.LastSeen)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </section>
+}
+
+@functions {
+    private static string Truncate(string text, int length) =>
+        text.Length <= length ? text : text[..length] + " …";
+}

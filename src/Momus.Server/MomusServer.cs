@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Momus.Core.Ingest;
 using Momus.Server.Store;
 
 namespace Momus.Server;
@@ -42,6 +43,8 @@ public static class MomusServer
         builder.Services.AddSingleton<IScanTargetFactory, ScanTargetFactory>();
         builder.Services.AddSingleton<ScanScheduler>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
+        builder.Services.AddSingleton<IngestHandler>();
+        builder.Services.AddHostedService<RetentionService>();
         builder.Services.AddRazorPages().AddApplicationPart(typeof(MomusServer).Assembly);
 
         // Antiforgery needs a key ring. Keeping it on the volume means the Settings form still
@@ -58,12 +61,42 @@ public static class MomusServer
 
         app.MapRazorPages();
         app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = Version }));
+        MapIngest(app);
 
         logger.LogInformation("Momus {Version} on http://localhost:{Port}, data in {Data}.",
             Version, options.Port, Path.GetFullPath(options.DataDirectory));
 
         await app.RunAsync(ct);
         return 0;
+    }
+
+    /// <summary>
+    /// The application half of the wire: one endpoint, one frozen contract (DESIGN.md), and no
+    /// way for a client to ask the server to do anything but remember what it sent.
+    /// </summary>
+    /// <remarks>
+    /// The batch is bound by hand rather than through model binding so that a client one version
+    /// ahead gets "that is not a batch" and a 400, not a 500 from the framework.
+    /// </remarks>
+    private static void MapIngest(WebApplication app)
+    {
+        app.MapPost("/api/v1/ingest", async (HttpRequest request, IngestHandler handler, CancellationToken ct) =>
+        {
+            IngestBatch? batch;
+            try
+            {
+                batch = await request.ReadFromJsonAsync<IngestBatch>(IngestJson.Options, ct);
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+
+            if (IngestHandler.Validate(batch) is { } error) return Results.BadRequest(new { error });
+
+            var windowId = await handler.HandleAsync(batch!, ct);
+            return Results.Accepted($"/api/v1/windows/{windowId}", new { window = windowId });
+        });
     }
 
     /// <summary>

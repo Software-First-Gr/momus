@@ -36,11 +36,14 @@ src/Momus.Core        engine + models: IDiagnosticCheck, IScanTarget, CollectorE
                       ScanReport, Subject, SqlFingerprint
 src/Momus.Postgres    PostgresScanTarget + checks (Npgsql)
 src/Momus.SqlServer   SqlServerScanTarget + checks (Microsoft.Data.SqlClient)
-src/Momus.Server      serve: SQLite store (versioned schema scripts), ScanScheduler, Razor Pages UI
+src/Momus.Server      serve: SQLite store (versioned schema scripts), ScanScheduler, ingest
+                      endpoint + RetentionService, QueryJoin, Razor Pages UI
+src/Momus.Client      in-app half: AddMomus(), EF Core interceptor, operation scope, exporter
 src/Momus.Cli         `momus` dotnet tool: scan + serve; the Docker image is built from here
 samples/Shop.Api      demo shop with deliberate problems and a control panel (:8080)
 tools/FingerprintCapture   regenerates the fingerprint fixture pairs from a live database
-tests/Momus.Tests     engine, thresholds, fingerprint fixtures, store, scheduler, options
+tests/Momus.Tests     engine, thresholds, fingerprint fixtures, store, ingest, query join,
+                      scheduler, options
 docker/               postgres.conf and init SQL for the demo stack
 docs/                 DESIGN.md, PLAN.md
 ```

@@ -208,6 +208,16 @@ public static class SqlFingerprint
                 continue;
             }
 
+            // Postgres's cast operator, before the marker rule below can eat the second colon and
+            // turn "count(*)::float" into "count(*) : ?" — which would give two different casts of
+            // one column the same key.
+            if (c == ':' && i + 1 < sql.Length && sql[i + 1] == ':')
+            {
+                tokens.Add(new Token(Kind.Punct, "::"));
+                i += 2;
+                continue;
+            }
+
             // @p0 / @__id_0 (SQL Server, EF) and :p1 (Oracle-style, some providers)
             if ((c == '@' || c == ':') && i + 1 < sql.Length && (char.IsLetterOrDigit(sql[i + 1]) || sql[i + 1] == '_'))
             {

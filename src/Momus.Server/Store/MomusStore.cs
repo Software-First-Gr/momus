@@ -14,7 +14,7 @@ namespace Momus.Server.Store;
 /// handful of targets every minute has no reason to fight over that: it keeps the code free of
 /// retry loops and "database is locked" surprises.
 /// </remarks>
-public sealed class MomusStore : IAsyncDisposable
+public sealed partial class MomusStore : IAsyncDisposable
 {
     private readonly string _connectionString;
     private readonly SemaphoreSlim _writeLock = new(1, 1);

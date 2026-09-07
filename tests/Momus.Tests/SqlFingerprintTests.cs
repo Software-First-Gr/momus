@@ -69,6 +69,18 @@ public class SqlFingerprintTests
     }
 
     [Fact]
+    public void A_postgres_cast_is_an_operator_and_not_a_parameter_marker()
+    {
+        // ":float" looks exactly like the ":p1" marker one rule down, so a cast used to eat its
+        // own second colon — which silently gave two different casts of one column the same key.
+        Assert.NotEqual(
+            SqlFingerprint.Compute("select count(*)::float from t"),
+            SqlFingerprint.Compute("select count(*)::text from t"));
+
+        Assert.Contains("::float", SqlFingerprint.Normalize("select count(*)::float from t"));
+    }
+
+    [Fact]
     public void Whitespace_and_keyword_case_do_not_change_the_key()
     {
         Assert.Equal(

@@ -50,6 +50,65 @@ dotnet tool install -g Momus
 momus serve --target postgres:"Host=localhost;Username=postgres;Database=shop"
 ```
 
+## See what your application asked for
+
+Everything above works without touching your code: Momus reads the database's own statistics
+views, so it works just as well against a Java, PHP or .NET Framework application as a modern
+.NET one. `Momus.Client` adds the other half — which endpoint ran which statement, how many
+times per request, and from which line — and the Queries tab puts the two views of one
+statement on one row:
+
+| Query | Operation | Call site | Calls/min | App mean | DB mean | Database says |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `select … from order_lines where order_id = ?` | `GET /api/orders/{id}` | `OrdersHandler.cs:42` | 371 | 8.3 ms | 7.9 ms | #1 query by total time |
+
+Both numbers describe the same statement because both sides fingerprint it the same way.
+
+> **Not on nuget.org yet.** `Momus.Client` ships with `v0.2.0` (M2.5 in `docs/PLAN.md`). Until
+> then, reference `src/Momus.Client/Momus.Client.csproj` from a checkout, the way
+> `samples/Shop.Api` does.
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<ShopContext>(o => o.UseNpgsql(connectionString));
+builder.AddMomus();   // after your AddDbContext calls
+```
+
+That is the whole integration. It registers an EF Core interceptor, names each operation after
+the matched route, and posts aggregates to `http://localhost:4848` every five seconds.
+
+**It has to come after `AddDbContext`.** `AddMomus()` works by wrapping the
+`DbContextOptions<T>` registrations that already exist; called first it has nothing to wrap, and
+says so loudly at startup. A `DbContext` constructed by hand outside DI is not seen at all.
+
+What leaves your process, and what never does:
+
+- **Sent:** normalized statement text (`where order_id = ?`), counts, timings, row counts, the
+  operation name and the call site.
+- **Never sent:** parameter values, literals, result rows. They are not read in the first place.
+- **Off outside Development.** Set `Momus__Enabled=true` to turn it on elsewhere.
+- **Never blocks a request.** A finished request hands an object to a bounded channel and
+  returns; a Momus server that is down costs one warning line and nothing else.
+
+| Setting | Default |
+| --- | --- |
+| `Momus:Enabled` | on in Development only |
+| `Momus:Endpoint` | `http://localhost:4848` |
+| `Momus:ShareConnectionStrings` | on when the endpoint is loopback |
+| `Momus:FlushSeconds` | `5` |
+| `Momus:AppName` | the entry assembly's name |
+
+`ShareConnectionStrings` is how the server learns which database to scan without you configuring
+it twice. It sends the connection string of the contexts that ran statements, so leave it off
+unless the Momus server is one you run.
+
+For work that is not a request, name it yourself:
+
+```csharp
+using var operation = MomusOperation.Begin("NightlyInvoiceRun");
+```
+
 ## Quick start from source
 
 Requires the .NET 10 SDK.
@@ -94,7 +153,9 @@ src/Momus.Core       engine + models: IDiagnosticCheck, IScanTarget, CollectorEn
                      Finding, Subject, SqlFingerprint
 src/Momus.Postgres   PostgresScanTarget + checks (Npgsql)
 src/Momus.SqlServer  SqlServerScanTarget + checks (Microsoft.Data.SqlClient)
-src/Momus.Server     `momus serve`: SQLite store, scheduler, web UI (ships inside the CLI)
+src/Momus.Server     `momus serve`: SQLite store, scheduler, ingest endpoint, web UI
+                     (ships inside the CLI, never as its own package)
+src/Momus.Client     the in-app half: EF Core interceptor, operation scope, exporter
 src/Momus.Cli        `momus scan` and `momus serve`; the Docker image is this project
 samples/Shop.Api     the demo shop: deliberate N+1, unindexed search, control panel
 tools/FingerprintCapture   captures real (app SQL, statistics-view SQL) pairs for the tests
@@ -125,9 +186,9 @@ MOMUS_TEST_PG="Host=localhost;Username=postgres" dotnet test       # + live Post
 
 ## Where this is going
 
-Momus 1.0 adds the other half: a small client inside your .NET app that records which endpoint
-ran which query, how many times per request and from which line of code, so the page can say
-*this endpoint has an N+1 on that table, and it started with last Tuesday's deploy* — the
-question a general-purpose AI cannot answer because it cannot see your database.
+The two halves are joined; what is missing is the part that reads the join and tells you what to
+do about it. Next is the insight engine: *this endpoint has an N+1 on that table*, and after
+that *and it started with last Tuesday's deploy* — the question a general-purpose AI cannot
+answer, because it cannot see your database.
 
 `docs/DESIGN.md` is the whole design; `docs/PLAN.md` is what happens next.
