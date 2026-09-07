@@ -21,11 +21,18 @@ public sealed record Subject(string Kind, string Key)
     /// <summary>The instance as a whole: the subject of server-wide findings such as cache hit ratio.</summary>
     public const string Server = "server";
 
+    /// <summary>
+    /// A named unit of work in an application — a route or a background job. Only insights use it:
+    /// a database has no idea what an operation is, which is exactly why the app side exists.
+    /// </summary>
+    public const string Operation = "operation";
+
     public static Subject ForQuery(string fingerprint) => new(Query, fingerprint);
     public static Subject ForTable(string schemaQualifiedName) => new(Table, schemaQualifiedName);
     public static Subject ForIndex(string name) => new(Index, name);
     public static Subject ForSession(long id) => new(Session, id.ToString());
     public static Subject ForDatabase(string name) => new(Database, name);
+    public static Subject ForOperation(string name) => new(Operation, name);
 
     /// <summary>The whole instance. Server-wide findings have no narrower subject.</summary>
     public static Subject ForServer() => new(Server, "");

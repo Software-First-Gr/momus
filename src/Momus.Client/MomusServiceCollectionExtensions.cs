@@ -83,7 +83,14 @@ public static class MomusServiceCollectionExtensions
         services.AddHostedService<MomusExporter>();
         services.AddSingleton<IStartupFilter, MomusStartupFilter>();
 
-        var hooked = HookDbContexts(services, new MomusCommandInterceptor(options, targets, queue));
+        // Three interceptors, because EF's base classes are one per concern: statements,
+        // transactions, connections. They share the operation scope and nothing else.
+        var hooked = HookDbContexts(services,
+        [
+            new MomusCommandInterceptor(options, targets, queue),
+            new MomusTransactionInterceptor(options),
+            new MomusConnectionInterceptor(options),
+        ]);
         services.AddSingleton<IHostedService>(provider => new StartupReport(
             hooked, options, provider.GetRequiredService<ILoggerFactory>().CreateLogger("Momus")));
     }
@@ -97,7 +104,7 @@ public static class MomusServiceCollectionExtensions
     /// <c>AddDbContextFactory</c>. The documented-looking alternative — registering an
     /// <c>IInterceptor</c> in the application's container — does not work on any of them.
     /// </remarks>
-    private static int HookDbContexts(IServiceCollection services, IInterceptor interceptor)
+    private static int HookDbContexts(IServiceCollection services, IInterceptor[] interceptors)
     {
         var hooked = 0;
 
@@ -116,7 +123,7 @@ public static class MomusServiceCollectionExtensions
 
                 // The builder hands back the same closed generic type it was given, so the service
                 // type is preserved and nothing downstream can tell the difference.
-                return new DbContextOptionsBuilder(original).AddInterceptors(interceptor).Options;
+                return new DbContextOptionsBuilder(original).AddInterceptors(interceptors).Options;
             }, descriptor.Lifetime);
 
             hooked++;

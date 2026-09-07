@@ -16,6 +16,8 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     private static readonly AsyncLocal<OperationContext?> Ambient = new();
 
     private readonly Dictionary<(string Key, string? CallSite), QueryTally> _queries = new();
+    private readonly List<TransactionRecord> _transactions = [];
+    private readonly List<double> _poolWaits = [];
     private readonly long _startedAt = Stopwatch.GetTimestamp();
     private OperationContext? _previous;
     private string? _name;
@@ -98,6 +100,27 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
         tally.Add(durationMs, rows, failed);
     }
 
+    /// <summary>
+    /// Records a transaction this operation held. <paramref name="dbMs"/> is the database time
+    /// spent inside it: the gap between that and the open time is the transaction waiting on
+    /// something that is not the database, which is what makes other sessions queue behind it.
+    /// </summary>
+    public void RecordTransaction(double openMs, double dbMs, string? callSite, int maxRecords)
+    {
+        if (_transactions.Count >= maxRecords) return;
+        _transactions.Add(new TransactionRecord(openMs, dbMs, callSite));
+    }
+
+    /// <summary>Records how long this operation waited to get a connection.</summary>
+    public void RecordPoolWait(double waitMs, int maxRecords)
+    {
+        if (_poolWaits.Count >= maxRecords) return;
+        _poolWaits.Add(waitMs);
+    }
+
+    /// <summary>Database time so far, for measuring how much of a transaction was actually work.</summary>
+    public double DbMsSoFar => DbMs;
+
     /// <summary>Adds rows to a statement already recorded, once its reader has been read to the end.</summary>
     public void AddRows(string key, string? callSite, long rows)
     {
@@ -114,6 +137,8 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
         QueryCount = QueryCount,
         Overflow = Overflow,
         CountsAsOperation = countsAsOperation,
+        Transactions = _transactions.ToArray(),
+        PoolWaits = _poolWaits.ToArray(),
         Queries = _queries.Select(q => new QueryExecutions
         {
             Key = q.Key.Key,
@@ -167,7 +192,17 @@ internal sealed class CompletedOperation
     public required bool CountsAsOperation { get; init; }
 
     public required IReadOnlyList<QueryExecutions> Queries { get; init; }
+
+    public IReadOnlyList<TransactionRecord> Transactions { get; init; } = [];
+
+    /// <summary>Milliseconds spent acquiring a connection, one entry per acquisition.</summary>
+    public IReadOnlyList<double> PoolWaits { get; init; } = [];
 }
+
+/// <param name="OpenMs">How long the transaction was open.</param>
+/// <param name="DbMs">How much of that was spent talking to the database.</param>
+/// <param name="CallSite">Where it was opened.</param>
+internal sealed record TransactionRecord(double OpenMs, double DbMs, string? CallSite);
 
 internal sealed class QueryExecutions
 {

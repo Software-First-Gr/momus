@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Momus.Core;
 using Momus.Core.Insights;
 using Momus.Server.Insights;
+using Momus.Tests.Fakes;
 
 namespace Momus.Tests;
 
@@ -198,9 +199,8 @@ public class InsightTests
 
     private static IInsightContext Context(
         IReadOnlyList<QueryStatView>? queries = null,
-        IReadOnlyList<FindingView>? findings = null) => new Snapshot
+        IReadOnlyList<FindingView>? findings = null) => new InsightSnapshot
     {
-        TargetId = "shop",
         Now = When,
         Since = When.AddHours(-1),
         QueryStats = queries ?? [],
@@ -208,16 +208,6 @@ public class InsightTests
     };
 
     private static readonly DateTimeOffset When = new(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
-
-    private sealed record Snapshot : IInsightContext
-    {
-        public required string TargetId { get; init; }
-        public required DateTimeOffset Now { get; init; }
-        public required DateTimeOffset Since { get; init; }
-        public IReadOnlyList<FindingView> LatestFindings { get; init; } = [];
-        public IReadOnlyList<QueryStatView> QueryStats { get; init; } = [];
-        public IReadOnlyList<OperationStatView> OperationStats { get; init; } = [];
-    }
 
     private static QueryStatView Query(
         string key, string operation, int repeats, double perMinute, double meanMs,

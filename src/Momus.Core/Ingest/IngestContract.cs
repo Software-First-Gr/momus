@@ -21,6 +21,12 @@ public sealed record IngestBatch
     public IReadOnlyList<IngestOperation> Operations { get; init; } = [];
     public IReadOnlyList<IngestQuery> Queries { get; init; } = [];
 
+    /// <summary>Transactions held open, per operation. Added in M3; absent from older clients.</summary>
+    public IReadOnlyList<IngestTransaction> Transactions { get; init; } = [];
+
+    /// <summary>Time spent waiting for a connection, per operation. Added in M3.</summary>
+    public IReadOnlyList<IngestPool> Pool { get; init; } = [];
+
     /// <summary>
     /// Executions the client could not attribute because the window hit its key limit. Shown in
     /// the UI as "unattributed": a number that is never silently zero is worth more than one that
@@ -112,6 +118,25 @@ public sealed record IngestQuery(
     int MaxRepeatsPerOperation,
     long Errors);
 
+/// <summary>
+/// A transaction, as one operation used it. <c>DbMs</c> is the time actually spent talking to the
+/// database inside it — the gap between that and <c>OpenMs</c> is the transaction being held open
+/// across work that is not database work, which is what makes other sessions wait.
+/// </summary>
+public sealed record IngestTransaction(
+    string Operation,
+    string? CallSite,
+    long Count,
+    Timing OpenMs,
+    Stat DbMs);
+
+/// <summary>
+/// Waiting for a connection from the pool, per operation. A pool that is empty is usually a
+/// symptom of transactions held open, and the database's own connection-saturation finding is the
+/// third view of the same problem.
+/// </summary>
+public sealed record IngestPool(string Operation, long Waits, Timing WaitMs);
+
 /// <summary>A summed and peak measurement.</summary>
 public sealed record Stat(double Sum, double Max);
 
@@ -119,14 +144,21 @@ public sealed record Stat(double Sum, double Max);
 public sealed record Counts(long Sum, long Max);
 
 /// <summary>
-/// Timings with a shape. <c>Hist</c> is eight log2 buckets starting at 1 ms: enough for a p95
+/// Timings with a shape. <c>Hist</c> is twelve log2 buckets starting at 1 ms: enough for a p95
 /// without shipping raw samples.
 /// </summary>
+/// <remarks>
+/// Twelve rather than eight, which is what an earlier draft used. Eight buckets stop at 64 ms,
+/// which is a reasonable range for a statement and a useless one for the two things M3 measures:
+/// a transaction held open and a wait for a connection are interesting at hundreds of
+/// milliseconds, so a p95 that could never exceed 64 would have made both rules unable to fire at
+/// all. Twelve reaches a second, and the last bucket means "at least that".
+/// </remarks>
 public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
 {
-    public const int Buckets = 8;
+    public const int Buckets = 12;
 
-    /// <summary>Which bucket a duration falls in: &lt;1 ms, &lt;2, &lt;4, … &lt;64, then everything above.</summary>
+    /// <summary>Which bucket a duration falls in: &lt;1 ms, &lt;2, &lt;4, … &lt;1024, then everything above.</summary>
     public static int BucketFor(double milliseconds)
     {
         if (milliseconds < 1) return 0;
@@ -134,7 +166,11 @@ public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
         return bucket >= Buckets ? Buckets - 1 : bucket;
     }
 
-    /// <summary>Approximate percentile from the buckets, as the upper bound of the bucket it lands in.</summary>
+    /// <summary>
+    /// Approximate percentile from the buckets, as the upper bound of the bucket it lands in. The
+    /// last bucket has no upper bound, so the largest value actually seen stands in for one —
+    /// otherwise everything past a second would report as exactly a second.
+    /// </summary>
     public double Percentile(double fraction)
     {
         var total = Hist.Sum();
@@ -145,7 +181,10 @@ public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
         for (var i = 0; i < Hist.Count; i++)
         {
             seen += Hist[i];
-            if (seen >= target) return i == 0 ? 1 : Math.Pow(2, i);
+            if (seen < target) continue;
+
+            if (i == 0) return 1;
+            return i >= Buckets - 1 && Max > 0 ? Max : Math.Pow(2, i);
         }
         return Max;
     }

@@ -11,10 +11,13 @@ internal sealed class Window(int maxKeys)
 {
     private readonly Dictionary<(string Key, string Operation, string? CallSite), QueryAggregate> _queries = new();
     private readonly Dictionary<string, OperationAggregate> _operations = new();
+    private readonly Dictionary<(string Operation, string? CallSite), TransactionAggregate> _transactions = new();
+    private readonly Dictionary<string, PoolAggregate> _pool = new();
 
     public DateTimeOffset From { get; } = DateTimeOffset.UtcNow;
     public long Overflow { get; private set; }
-    public bool IsEmpty => _queries.Count == 0 && _operations.Count == 0 && Overflow == 0;
+    public bool IsEmpty => _queries.Count == 0 && _operations.Count == 0 &&
+                           _transactions.Count == 0 && _pool.Count == 0 && Overflow == 0;
 
     public void Add(CompletedOperation operation)
     {
@@ -27,6 +30,27 @@ internal sealed class Window(int maxKeys)
                 _operations[operation.Name] = op = new OperationAggregate(operation.Kind);
             }
             op.Add(operation.DurationMs, operation.QueryCount, operation.DbMs);
+        }
+
+        foreach (var transaction in operation.Transactions)
+        {
+            var id = (operation.Name, transaction.CallSite);
+            if (!_transactions.TryGetValue(id, out var tx))
+            {
+                if (_transactions.Count >= maxKeys) continue;
+                _transactions[id] = tx = new TransactionAggregate();
+            }
+            tx.Add(transaction.OpenMs, transaction.DbMs);
+        }
+
+        foreach (var wait in operation.PoolWaits)
+        {
+            if (!_pool.TryGetValue(operation.Name, out var pool))
+            {
+                if (_pool.Count >= maxKeys) continue;
+                _pool[operation.Name] = pool = new PoolAggregate();
+            }
+            pool.Add(wait);
         }
 
         foreach (var query in operation.Queries)
@@ -71,7 +95,53 @@ internal sealed class Window(int maxKeys)
             q.Value.Rows,
             q.Value.MaxRepeats,
             q.Value.Errors)).ToArray(),
+        Transactions = _transactions.Select(t => new IngestTransaction(
+            t.Key.Operation,
+            t.Key.CallSite,
+            t.Value.Count,
+            new Timing(t.Value.OpenSum, t.Value.OpenMax, t.Value.Histogram),
+            new Stat(t.Value.DbSum, t.Value.DbMax))).ToArray(),
+        Pool = _pool.Select(p => new IngestPool(
+            p.Key,
+            p.Value.Count,
+            new Timing(p.Value.Sum, p.Value.Max, p.Value.Histogram))).ToArray(),
     };
+
+    private sealed class TransactionAggregate
+    {
+        public long Count { get; private set; }
+        public double OpenSum { get; private set; }
+        public double OpenMax { get; private set; }
+        public double DbSum { get; private set; }
+        public double DbMax { get; private set; }
+        public long[] Histogram { get; } = new long[Timing.Buckets];
+
+        public void Add(double openMs, double dbMs)
+        {
+            Count++;
+            OpenSum += openMs;
+            if (openMs > OpenMax) OpenMax = openMs;
+            DbSum += dbMs;
+            if (dbMs > DbMax) DbMax = dbMs;
+            Histogram[Timing.BucketFor(openMs)]++;
+        }
+    }
+
+    private sealed class PoolAggregate
+    {
+        public long Count { get; private set; }
+        public double Sum { get; private set; }
+        public double Max { get; private set; }
+        public long[] Histogram { get; } = new long[Timing.Buckets];
+
+        public void Add(double waitMs)
+        {
+            Count++;
+            Sum += waitMs;
+            if (waitMs > Max) Max = waitMs;
+            Histogram[Timing.BucketFor(waitMs)]++;
+        }
+    }
 
     private sealed class QueryAggregate(string sample)
     {

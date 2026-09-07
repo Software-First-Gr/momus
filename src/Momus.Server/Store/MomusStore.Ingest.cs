@@ -78,6 +78,31 @@ public sealed partial class MomusStore
                     ("$qmax", operation.Queries.Max), ("$db", operation.DbMs.Sum));
             }
 
+            foreach (var transaction in batch.Transactions)
+            {
+                await ExecuteAsync(connection, """
+                    INSERT INTO transaction_stats (window_id, operation, call_site, txn_count,
+                                                   open_sum, open_max, open_hist, db_sum, db_max)
+                    VALUES ($window, $operation, $site, $count, $sum, $max, $hist, $db, $dbmax)
+                    """, ct, tx,
+                    ("$window", windowId), ("$operation", transaction.Operation),
+                    ("$site", transaction.CallSite ?? ""), ("$count", transaction.Count),
+                    ("$sum", transaction.OpenMs.Sum), ("$max", transaction.OpenMs.Max),
+                    ("$hist", Histogram(transaction.OpenMs.Hist)),
+                    ("$db", transaction.DbMs.Sum), ("$dbmax", transaction.DbMs.Max));
+            }
+
+            foreach (var pool in batch.Pool)
+            {
+                await ExecuteAsync(connection, """
+                    INSERT INTO pool_stats (window_id, operation, waits, wait_sum, wait_max, wait_hist)
+                    VALUES ($window, $operation, $waits, $sum, $max, $hist)
+                    """, ct, tx,
+                    ("$window", windowId), ("$operation", pool.Operation), ("$waits", pool.Waits),
+                    ("$sum", pool.WaitMs.Sum), ("$max", pool.WaitMs.Max),
+                    ("$hist", Histogram(pool.WaitMs.Hist)));
+            }
+
             foreach (var query in batch.Queries)
             {
                 var targetId = query.Target ?? "";
@@ -412,7 +437,7 @@ public sealed partial class MomusStore
                 // Eight buckets, summed one by one: SQLite has no array type and this is the one
                 // place the shape of a timing has to survive being folded.
                 var buckets = string.Join(" || ',' || ",
-                    Enumerable.Range(0, Timing.Buckets).Select(i => $"SUM(json_extract(q.hist, '$[{i}]'))"));
+                    Enumerable.Range(0, Timing.Buckets).Select(i => $"COALESCE(SUM(json_extract(q.hist, '$[{i}]')), 0)"));
 
                 await ExecuteAsync(connection, $"""
                     INSERT INTO query_stats (window_id, fingerprint, target_id, operation, call_site, calls,
@@ -434,6 +459,32 @@ public sealed partial class MomusStore
                     FROM operation_stats o JOIN windows w ON w.id = o.window_id
                     WHERE {Match}
                     GROUP BY o.name, o.kind
+                    """, ct, tx, [.. scope, ("$window", windowId)]);
+
+                var openBuckets = string.Join(" || ',' || ",
+                    Enumerable.Range(0, Timing.Buckets).Select(i => $"COALESCE(SUM(json_extract(t.open_hist, '$[{i}]')), 0)"));
+
+                await ExecuteAsync(connection, $"""
+                    INSERT INTO transaction_stats (window_id, operation, call_site, txn_count,
+                                                   open_sum, open_max, open_hist, db_sum, db_max)
+                    SELECT $window, t.operation, t.call_site, SUM(t.txn_count),
+                           SUM(t.open_sum), MAX(t.open_max), '[' || {openBuckets} || ']',
+                           SUM(t.db_sum), MAX(t.db_max)
+                    FROM transaction_stats t JOIN windows w ON w.id = t.window_id
+                    WHERE {Match}
+                    GROUP BY t.operation, t.call_site
+                    """, ct, tx, [.. scope, ("$window", windowId)]);
+
+                var waitBuckets = string.Join(" || ',' || ",
+                    Enumerable.Range(0, Timing.Buckets).Select(i => $"COALESCE(SUM(json_extract(p.wait_hist, '$[{i}]')), 0)"));
+
+                await ExecuteAsync(connection, $"""
+                    INSERT INTO pool_stats (window_id, operation, waits, wait_sum, wait_max, wait_hist)
+                    SELECT $window, p.operation, SUM(p.waits), SUM(p.wait_sum), MAX(p.wait_max),
+                           '[' || {waitBuckets} || ']'
+                    FROM pool_stats p JOIN windows w ON w.id = p.window_id
+                    WHERE {Match}
+                    GROUP BY p.operation
                     """, ct, tx, [.. scope, ("$window", windowId)]);
 
                 folded += Convert.ToInt32(await ScalarAsync(connection, $"""

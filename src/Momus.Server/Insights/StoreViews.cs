@@ -75,13 +75,23 @@ public sealed class StoreInsightContext : IInsightContext
     public IReadOnlyList<FindingView> LatestFindings { get; init; } = [];
     public IReadOnlyList<QueryStatView> QueryStats { get; init; } = [];
     public IReadOnlyList<OperationStatView> OperationStats { get; init; } = [];
+    public IReadOnlyList<TransactionStatView> Transactions { get; init; } = [];
+    public IReadOnlyList<PoolStatView> PoolWaits { get; init; } = [];
+    public IReadOnlyList<DeployView> Deploys { get; init; } = [];
+    public IReadOnlyList<VersionStatView> VersionStats { get; init; } = [];
 
-    /// <summary>Reads everything the 1.0 rules need for one target, in three queries.</summary>
+    /// <summary>Reads everything the rules need for one target, before any of them runs.</summary>
+    /// <param name="window">
+    /// How far back the live numbers reach. Version comparisons reach further on purpose: two
+    /// deploys are rarely both inside one hour, and a regression that only shows up against a
+    /// build from yesterday is still a regression.
+    /// </param>
     public static async Task<StoreInsightContext> LoadAsync(
         MomusStore store, string targetId, TimeSpan window, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
         var since = now - window;
+        var history = now - MomusStore.RollupRetention;
 
         var findings = await store.LatestFindingsAsync(targetId, ct);
         var queries = await store.AppQueryStatsAsync(since, ct: ct);
@@ -99,6 +109,10 @@ public sealed class StoreInsightContext : IInsightContext
                 .Where(q => q.TargetId.Length == 0 || q.TargetId == targetId)
                 .Select(q => q.ToView(now)).ToList(),
             OperationStats = operations.Select(o => o.ToView()).ToList(),
+            Transactions = await store.TransactionStatsAsync(since, ct),
+            PoolWaits = await store.PoolStatsAsync(since, ct),
+            Deploys = await store.DeploysAsync(ct: ct),
+            VersionStats = await store.VersionStatsAsync(history, ct),
         };
     }
 }

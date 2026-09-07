@@ -1,3 +1,5 @@
+using Momus.Core.Ingest;
+
 namespace Momus.Core.Insights;
 
 /// <summary>
@@ -42,6 +44,71 @@ public interface IInsightContext
 
     /// <summary>What the applications were asked to do, one row per named operation.</summary>
     IReadOnlyList<OperationStatView> OperationStats { get; }
+
+    /// <summary>Transactions the applications held open, one row per operation and call site.</summary>
+    IReadOnlyList<TransactionStatView> Transactions { get; }
+
+    /// <summary>Connection acquisition times, one row per operation.</summary>
+    IReadOnlyList<PoolStatView> PoolWaits { get; }
+
+    /// <summary>
+    /// Every version an application has been seen running, with the day it first appeared. That
+    /// date is a deploy, and it is the only marker Momus needs to answer "since when".
+    /// </summary>
+    IReadOnlyList<DeployView> Deploys { get; }
+
+    /// <summary>
+    /// Statement timings grouped by application version, over a longer stretch than the rest of
+    /// this snapshot: comparing two deploys means reaching back past whichever one is older.
+    /// </summary>
+    IReadOnlyList<VersionStatView> VersionStats { get; }
+}
+
+/// <summary>
+/// A transaction as one operation used it. The gap between <see cref="OpenMs"/> and
+/// <see cref="DbMsSum"/> is the whole signal: time holding locks while doing something else.
+/// </summary>
+public sealed record TransactionStatView
+{
+    public required string Operation { get; init; }
+    public string? CallSite { get; init; }
+    public long Count { get; init; }
+    public required Timing OpenMs { get; init; }
+
+    /// <summary>Database time spent inside these transactions.</summary>
+    public double DbMsSum { get; init; }
+
+    /// <summary>Share of the open time that was actually database work. Low is the problem.</summary>
+    public double DbShare => OpenMs.Sum <= 0 ? 0 : DbMsSum / OpenMs.Sum;
+
+    public double P95OpenMs => OpenMs.Percentile(0.95);
+    public double MeanOpenMs => Count == 0 ? 0 : OpenMs.Sum / Count;
+}
+
+/// <summary>How long one operation waited for a connection. Normally nothing.</summary>
+public sealed record PoolStatView
+{
+    public required string Operation { get; init; }
+    public long Waits { get; init; }
+    public required Timing WaitMs { get; init; }
+
+    public double P95WaitMs => WaitMs.Percentile(0.95);
+    public double MeanWaitMs => Waits == 0 ? 0 : WaitMs.Sum / Waits;
+}
+
+/// <summary>A version of an application, and when it first turned up.</summary>
+public sealed record DeployView(string Version, DateTimeOffset FirstSeen, DateTimeOffset LastSeen, int Instances);
+
+/// <summary>One statement's timings under one application version, for comparing two deploys.</summary>
+public sealed record VersionStatView
+{
+    public required string Fingerprint { get; init; }
+    public required string Version { get; init; }
+    public long Calls { get; init; }
+    public double TotalMs { get; init; }
+    public string? Operation { get; init; }
+    public string? CallSite { get; init; }
+    public double MeanMs => Calls == 0 ? 0 : TotalMs / Calls;
 }
 
 /// <summary>

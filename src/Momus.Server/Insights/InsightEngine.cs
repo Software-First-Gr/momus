@@ -18,6 +18,9 @@ public sealed class InsightEngine(ILogger<InsightEngine> logger, IReadOnlyList<I
     private readonly IReadOnlyList<IInsight> _rules = rules ??
     [
         new NPlusOneInsight(),
+        new RegressionInsight(),
+        new TransactionHeldOpenInsight(),
+        new PoolWaitInsight(),
         new HotQueryOriginInsight(),
         new DbFindingInsight(),
     ];
