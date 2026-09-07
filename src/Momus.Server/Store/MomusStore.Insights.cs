@@ -30,9 +30,9 @@ public sealed partial class MomusStore
                 await ExecuteAsync(connection, """
                     INSERT INTO insights (target_id, kind, identity_key, severity, title, detail,
                                           recommendation, evidence, subjects, first_seen, last_seen,
-                                          seen_count, status)
+                                          seen_count, status, score)
                     VALUES ($target, $kind, $identity, $severity, $title, $detail, $recommendation,
-                            $evidence, $subjects, $now, $now, 1, 'open')
+                            $evidence, $subjects, $now, $now, 1, 'open', $score)
                     ON CONFLICT(target_id, identity_key) DO UPDATE SET
                         last_seen = excluded.last_seen,
                         seen_count = insights.seen_count + 1,
@@ -42,6 +42,10 @@ public sealed partial class MomusStore
                         recommendation = excluded.recommendation,
                         evidence = excluded.evidence,
                         subjects = excluded.subjects,
+                        score = excluded.score,
+                        -- Marked fixed and back again: worth saying so, because it means the fix
+                        -- did not hold rather than that nobody has looked at it yet.
+                        reopened = CASE WHEN insights.status = 'fixed' THEN 1 ELSE insights.reopened END,
                         status = CASE WHEN insights.status = 'fixed' THEN 'open'
                                       ELSE insights.status END
                     """, ct, tx,
@@ -50,7 +54,7 @@ public sealed partial class MomusStore
                     ("$detail", insight.Detail), ("$recommendation", insight.Recommendation),
                     ("$evidence", JsonSerializer.Serialize(insight.Evidence, EvidenceJson)),
                     ("$subjects", string.Join(' ', insight.Subjects.Select(s => s.ToString()))),
-                    ("$now", now));
+                    ("$now", now), ("$score", insight.Score));
             }
 
             await tx.CommitAsync(ct);
@@ -58,25 +62,30 @@ public sealed partial class MomusStore
     }
 
     /// <summary>
-    /// The insights from the newest evaluation, worst first. "Newest" is the largest last-seen for
-    /// this target: an insight that stopped firing keeps its history but leaves the page, the same
-    /// way a finding that stopped appearing leaves the findings list.
+    /// The insights from the newest evaluation, in the order they are worth fixing. "Newest" is
+    /// the largest last-seen for this target: an insight that stopped firing keeps its history but
+    /// leaves the page, the same way a finding that stopped appearing leaves the findings list.
     /// </summary>
+    /// <param name="includeMuted">
+    /// The page that offers Unmute has to be able to see them; every other caller wants them out
+    /// of the way, which is what muting them was for.
+    /// </param>
     public async Task<IReadOnlyList<StoredInsight>> CurrentInsightsAsync(
-        string targetId, CancellationToken ct = default)
+        string targetId, bool includeMuted = false, CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT kind, identity_key, severity, title, detail, recommendation, evidence, subjects,
-                   first_seen, last_seen, seen_count, status
+                   first_seen, last_seen, seen_count, status, score, reopened
             FROM insights
             WHERE target_id = $target
               AND last_seen = (SELECT MAX(last_seen) FROM insights WHERE target_id = $target)
-              AND status <> 'muted'
-            ORDER BY severity DESC, last_seen DESC, first_seen
+              AND ($muted = 1 OR status <> 'muted')
+            ORDER BY score DESC, severity DESC, first_seen
             """;
         cmd.Parameters.AddWithValue("$target", targetId);
+        cmd.Parameters.AddWithValue("$muted", includeMuted ? 1 : 0);
 
         var insights = new List<StoredInsight>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -97,6 +106,8 @@ public sealed partial class MomusStore
                 LastSeen = Read(reader.GetString(9)),
                 SeenCount = reader.GetInt32(10),
                 Status = reader.GetString(11),
+                Score = reader.GetDouble(12),
+                Reopened = reader.GetInt64(13) == 1,
             });
         }
         return insights;
@@ -119,6 +130,49 @@ public sealed record StoredInsight
     public int SeenCount { get; init; }
     public string Status { get; init; } = InsightStatus.Open;
 
+    /// <summary>Severity × traffic share × recency, as of the last evaluation.</summary>
+    public double Score { get; init; }
+
+    /// <summary>Marked fixed at some point, and fired again since. The fix did not hold.</summary>
+    public bool Reopened { get; init; }
+
     /// <summary>True the first time it fired — the difference between "new" and "still there".</summary>
     public bool IsNew => SeenCount <= 1;
+}
+
+public sealed partial class MomusStore
+{
+    /// <summary>
+    /// Mute or mark fixed. A muted insight stops being shown and keeps accumulating history; a
+    /// fixed one that fires again reopens itself, which is what the upsert already does.
+    /// </summary>
+    public async Task SetInsightStatusAsync(
+        string targetId, string identityKey, string status, CancellationToken ct = default)
+    {
+        if (status is not (InsightStatus.Open or InsightStatus.Muted or InsightStatus.Fixed))
+        {
+            throw new ArgumentException($"Unknown insight status '{status}'.", nameof(status));
+        }
+
+        await WriteAsync(async connection => await ExecuteAsync(connection, """
+            UPDATE insights SET status = $status
+            WHERE target_id = $target AND identity_key = $identity
+            """, ct, null,
+            ("$target", targetId), ("$identity", identityKey), ("$status", status)), ct);
+    }
+
+    /// <summary>When each insight was first seen, so ranking can favour what started today.</summary>
+    public async Task<IReadOnlyDictionary<string, DateTimeOffset>> InsightFirstSeenAsync(
+        string targetId, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT identity_key, first_seen FROM insights WHERE target_id = $target";
+        cmd.Parameters.AddWithValue("$target", targetId);
+
+        var seen = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) seen[reader.GetString(0)] = Read(reader.GetString(1));
+        return seen;
+    }
 }

@@ -1,0 +1,124 @@
+@page
+@model HistoryModel
+@{
+    ViewData["Title"] = "Momus — history";
+    ViewData["Tab"] = "history";
+    ViewData["HeaderStatus"] = Model.HeaderStatus;
+
+    const int width = 900;
+    const int height = 160;
+}
+
+@if (Model.Selected is null)
+{
+    <section>
+        <h1>No history yet</h1>
+        <p class="lede">History needs a database to have been scanned. <a href="/settings">Add one.</a></p>
+    </section>
+}
+else
+{
+    <section>
+        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+            <div>
+                <h1>History</h1>
+                <p class="lede" style="margin:0">
+                    @Model.Selected.Name · findings per scan over the last
+                    @($"{HistoryModel.Span.TotalDays:N0}") days, with every deploy marked.
+                </p>
+            </div>
+            <div class="grow" style="flex:1"></div>
+
+            @if (Model.Targets.Count > 1)
+            {
+                <form method="get" style="display:flex;gap:8px;align-items:center">
+                    <select name="target" onchange="this.form.submit()" style="width:auto">
+                        @foreach (var target in Model.Targets)
+                        {
+                            <option value="@target.Id" selected="@(target.Id == Model.Selected.Id)">@target.Name</option>
+                        }
+                    </select>
+                </form>
+            }
+        </div>
+
+        @if (Model.History.Count < 2)
+        {
+            <p class="small muted" style="margin-top:16px">
+                Not enough scans yet. Momus needs a couple of hours before this says anything.
+            </p>
+        }
+        else
+        {
+            <div style="overflow-x:auto;margin-top:18px">
+                <svg viewBox="0 0 @width @height" width="100%" height="@height"
+                     preserveAspectRatio="none" role="img"
+                     aria-label="Findings per scan over the last week, with deploys marked">
+
+                    @* Findings, as an area: the shape matters, the exact number does not. *@
+                    @{
+                        var points = string.Join(' ', Model.History.Select(h =>
+                            $"{Model.X(h.Hour) * width:F1},{height - 12 - (double)h.Findings / Model.Peak * (height - 24):F1}"));
+
+                        var serious = string.Join(' ', Model.History.Select(h =>
+                            $"{Model.X(h.Hour) * width:F1},{height - 12 - (double)h.Serious / Model.Peak * (height - 24):F1}"));
+                    }
+
+                    <polyline points="@points" fill="none" stroke="var(--muted)" stroke-width="1.5" opacity="0.6" />
+                    <polyline points="@serious" fill="none" stroke="var(--high)" stroke-width="2" />
+
+                    @* Deploys, as the vertical lines you compare the curve against. *@
+                    @foreach (var deploy in Model.Deploys)
+                    {
+                        var x = Model.X(deploy.FirstSeen) * width;
+                        <line x1="@($"{x:F1}")" y1="0" x2="@($"{x:F1}")" y2="@(height - 12)"
+                              stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.8" />
+                    }
+                </svg>
+            </div>
+
+            <p class="small muted" style="margin-top:10px">
+                <span style="color:var(--high)">━</span> High and Critical &nbsp;
+                <span style="color:var(--muted)">━</span> all findings &nbsp;
+                <span style="color:var(--accent)">┆</span> a deploy &nbsp;
+                · peak @Model.Peak per scan
+            </p>
+        }
+    </section>
+
+    <section>
+        <h2>Deploys</h2>
+        @if (Model.Deploys.Count == 0)
+        {
+            <p class="small muted">
+                No application version has been seen this week. A deploy is not something Momus is
+                told about — it is a version turning up for the first time, which needs
+                <a href="/queries">the client</a>.
+            </p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>First seen</th>
+                    <th>Last seen</th>
+                    <th style="text-align:right">Instances</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var deploy in Model.Deploys.Reverse())
+                {
+                    <tr>
+                        <td><span class="chip">@deploy.Version</span></td>
+                        <td class="muted">@Humanize.Ago(deploy.FirstSeen)</td>
+                        <td class="muted">@Humanize.Ago(deploy.LastSeen)</td>
+                        <td style="text-align:right">@deploy.Instances</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+}

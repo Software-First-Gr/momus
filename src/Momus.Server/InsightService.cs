@@ -53,13 +53,19 @@ public sealed class InsightService(
         {
             var context = await StoreInsightContext.LoadAsync(store, target.Id, InsightEngine.Window, ct);
             var insights = await engine.EvaluateAsync(context, ct);
-            await store.SaveInsightsAsync(target.Id, insights, context.Now, ct);
+
+            // Ranked after every rule has run, over the same snapshot all of them saw, and using
+            // the first-seen dates the store already holds so "new" survives a restart.
+            var firstSeen = await store.InsightFirstSeenAsync(target.Id, ct);
+            var ranked = InsightRanking.Rank(insights, context, firstSeen);
+
+            await store.SaveInsightsAsync(target.Id, ranked, context.Now, ct);
 
             // One line when the number changes, not one every fifteen seconds.
-            if (_counts.TryGetValue(target.Id, out var previous) && previous == insights.Count) continue;
-            _counts[target.Id] = insights.Count;
+            if (_counts.TryGetValue(target.Id, out var previous) && previous == ranked.Count) continue;
+            _counts[target.Id] = ranked.Count;
 
-            logger.LogInformation("{Target}: {Count} insight(s).", target.Name, insights.Count);
+            logger.LogInformation("{Target}: {Count} insight(s).", target.Name, ranked.Count);
         }
     }
 }

@@ -14,6 +14,15 @@ public sealed class RetentionService(MomusStore store, ILogger<RetentionService>
     /// <summary>Often enough that an hour's windows are folded soon after they age out.</summary>
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// How often the file is actually shrunk. Deleting rows in SQLite frees pages for reuse but
+    /// does not return them, so a store that has held a week of windows keeps that size forever
+    /// without this. It rewrites the whole file, so it is a nightly job and not a ten-minute one.
+    /// </summary>
+    private static readonly TimeSpan VacuumEvery = TimeSpan.FromHours(24);
+
+    private DateTimeOffset _lastVacuum = DateTimeOffset.UtcNow;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(Interval);
@@ -49,5 +58,15 @@ public sealed class RetentionService(MomusStore store, ILogger<RetentionService>
             logger.LogInformation("Retention: folded {Folded} window(s), dropped {Removed} hourly row(s).",
                 folded, removed);
         }
+
+        if (now - _lastVacuum < VacuumEvery) return;
+        _lastVacuum = now;
+
+        var before = store.FileSizeBytes;
+        await store.VacuumAsync(ct);
+        var after = store.FileSizeBytes;
+
+        logger.LogInformation("Retention: vacuumed, {Before:N1} MB to {After:N1} MB.",
+            before / 1024.0 / 1024, after / 1024.0 / 1024);
     }
 }

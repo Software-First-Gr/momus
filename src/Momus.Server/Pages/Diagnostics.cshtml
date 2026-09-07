@@ -87,19 +87,9 @@
         Everything above as Markdown, with no connection strings in it. Paste it into an issue or
         into a coding agent — it says more than a description of the symptom does.
     </p>
-    <button type="button" onclick="momusCopy(this)">Copy</button>
+    <button type="button" onclick="momusCopy(this, 'momus-report')">Copy</button>
     <details open style="margin-top:10px">
         <summary class="small muted" style="cursor:pointer">Report</summary>
         <pre id="momus-report">@Model.Markdown</pre>
     </details>
 </section>
-
-<script>
-    // The page is open <details>, so the layout's refresh leaves it alone while you copy.
-    function momusCopy(button) {
-        const text = document.getElementById('momus-report').textContent;
-        navigator.clipboard.writeText(text).then(
-            () => { button.textContent = 'Copied'; },
-            () => { button.textContent = 'Select it and copy manually'; });
-    }
-</script>

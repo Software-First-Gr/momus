@@ -1,50 +1,89 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Momus.Core;
+using Momus.Core.Insights;
 using Momus.Server.Store;
 
 namespace Momus.Server.Pages;
 
 /// <summary>
-/// What the two halves mean together, worst first. Ordering is severity then how recently it was
-/// seen; the score that weighs traffic and recency — and the five "Fix first" cards it fills —
-/// arrives in M3.
+/// Every insight, in the order they are worth fixing. The home page shows the first five; this is
+/// the rest of them, plus the ones that have been muted out of the way.
 /// </summary>
-public sealed class InsightsModel(MomusStore store, ServerOptions options) : PageModel
+public sealed class InsightsModel(MomusStore store) : PageModel
 {
     public IReadOnlyList<StoredTarget> Targets { get; private set; } = [];
     public StoredTarget? Selected { get; private set; }
-    public IReadOnlyList<StoredInsight> Insights { get; private set; } = [];
+    public IReadOnlyList<InsightCard> Cards { get; private set; } = [];
+    public IReadOnlyList<InsightCard> Muted { get; private set; } = [];
     public bool AnyAppReported { get; private set; }
-    public int Port => options.Port;
 
-    /// <summary>
-    /// Which kinds need the app side to say anything. With no client reporting, the tab still
-    /// works — it just cannot answer "who runs this", and it should say so rather than look empty.
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> Kinds = new Dictionary<string, string>
+    /// <summary>Plain-language names for the rules, so the page never says "n_plus_one" at anyone.</summary>
+    private static readonly IReadOnlyDictionary<string, string> Kinds = new Dictionary<string, string>
     {
         ["n_plus_one"] = "N+1",
         ["hot_query_origin"] = "HOT QUERY",
+        ["regression"] = "REGRESSION",
+        ["transaction_held_open"] = "TRANSACTION",
+        ["pool_wait"] = "POOL",
         ["db_finding"] = "DATABASE",
     };
 
-    public async Task OnGetAsync(string? target, CancellationToken ct)
+    public static string KindLabel(string kind) =>
+        Kinds.GetValueOrDefault(kind, kind.Replace('_', ' ').ToUpperInvariant());
+
+    public async Task OnGetAsync(string? target, CancellationToken ct) => await LoadAsync(target, ct);
+
+    /// <summary>
+    /// Mute, unmute, or mark fixed. Nothing is deleted: an insight that was marked fixed and comes
+    /// back reopens itself, and that is a different story from one that is new.
+    /// </summary>
+    public async Task<IActionResult> OnPostStatusAsync(
+        string? target, string identity, string status, CancellationToken ct)
+    {
+        var targets = await store.TargetsAsync(ct);
+        var selected = targets.FirstOrDefault(t => t.Id == target) ?? targets.FirstOrDefault();
+
+        if (selected is not null && !string.IsNullOrEmpty(identity))
+        {
+            await store.SetInsightStatusAsync(selected.Id, identity, status, ct);
+        }
+
+        return RedirectToPage(new { target = selected?.Id });
+    }
+
+    private async Task LoadAsync(string? target, CancellationToken ct)
     {
         Targets = await store.TargetsAsync(ct);
         Selected = Targets.FirstOrDefault(t => t.Id == target) ?? Targets.FirstOrDefault();
-        AnyAppReported = (await store.AppsAsync(ct)).Count > 0;
 
-        if (Selected is not null) Insights = await store.CurrentInsightsAsync(Selected.Id, ct);
+        var apps = await store.AppsAsync(ct);
+        AnyAppReported = apps.Count > 0;
+        if (Selected is null) return;
+
+        var all = await store.CurrentInsightsAsync(Selected.Id, includeMuted: true, ct);
+        var series = await store.HourlyCallsAsync(ct: ct);
+        var app = apps.FirstOrDefault();
+
+        // Muted ones are shown here and nowhere else: this is the page with the button that
+        // undoes it, and an insight you can never unmute is one you have deleted by accident.
+        Cards = InsightCard.For(
+            all.Where(i => i.Status != InsightStatus.Muted).ToList(), series, Selected, app,
+            MomusServer.Version);
+
+        Muted = InsightCard.For(
+            all.Where(i => i.Status == InsightStatus.Muted).ToList(), series, Selected, app,
+            MomusServer.Version);
     }
 
-    public int Count(Severity severity) => Insights.Count(i => i.Severity == severity);
+    public int Count(Severity severity) => Cards.Count(c => c.Insight.Severity == severity);
 
-    public string Label(string kind) => Kinds.GetValueOrDefault(kind, kind.ToUpperInvariant());
-
-    /// <summary>Insights that needed both halves. Zero of them with an app reporting is worth knowing.</summary>
-    public int JoinedCount => Insights.Count(i => i.Kind is "n_plus_one" or "hot_query_origin");
+    /// <summary>Insights that needed both halves. Zero with an app reporting is worth knowing.</summary>
+    public int JoinedCount => Cards.Count(c =>
+        c.Insight.Kind is "n_plus_one" or "hot_query_origin" or "regression"
+            or "transaction_held_open" or "pool_wait");
 
     public string HeaderStatus => Selected is null
         ? "no target yet"
-        : $"{Selected.Name} · {Insights.Count} insight{(Insights.Count == 1 ? "" : "s")}";
+        : $"{Selected.Name} · {Cards.Count} insight{(Cards.Count == 1 ? "" : "s")}";
 }

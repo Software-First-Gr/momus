@@ -159,12 +159,16 @@ POST /api/v1/ingest
       "rows": 19200, "maxRepeatsPerOperation": 40, "errors": 0 }
   ],
   "transactions": [ { "operation": "POST /checkout", "callSite": "CheckoutService.cs:88", "count": 30,
-                      "openMs": { "sum": 24600, "max": 1900 }, "dbMs": { "sum": 720 } } ],
-  "pool": [ { "operation": "GET /orders/{id}", "waits": 12, "waitMs": { "sum": 940, "max": 210 } } ]
+                      "openMs": { "sum": 24600, "max": 1900, "hist": [...] }, "dbMs": { "sum": 720 } } ],
+  "pool": [ { "operation": "GET /orders/{id}", "waits": 12,
+              "waitMs": { "sum": 940, "max": 210, "hist": [...] } } ],
+  "client": { "version": "0.3.0", "dropped": 0 }
 }
 ```
 
-The histogram is eight log2 buckets starting at 1 ms, enough for a p95 without shipping raw samples. Version 1 of the contract is frozen at 1.0; new fields are additive.
+The histogram is twelve log2 buckets starting at 1 ms, enough for a p95 without shipping raw samples. `openMs` and `waitMs` carry one for the same reason `durationMs` does: the rules that read them are percentiles, and a sum and a maximum cannot produce one. Version 1 of the contract is frozen at 1.0; new fields are additive.
+
+`client` is the client's report on itself — which build is running, and how many finished operations it threw away rather than make a request wait. Instrumentation that quietly loses data is worse than instrumentation that says so, and the application's own log is the wrong place to say it: the person looking at Momus is not tailing the app.
 
 ## Server and store
 
@@ -217,22 +221,26 @@ public interface IInsight
 | `n_plus_one` | One key repeats 5 or more times inside a single operation **and** runs at least 60 times a minute — a shape and a cost, because neither alone is worth an afternoon | DB finding on the same key or on its table: seq scan, mean time, missing index | Medium alone, High if the DB side says the table is scanned or the query is slow |
 | `hot_query_origin` | A key is in the top 10 of the DB's top-queries findings by total time. The scan keeps 50 so the Queries tab can join any of them; 50 cards is a list nobody reads | Operation, call site, calls per minute from the app. If no app has sent this key, the insight says so: it comes from a job, a migration or another app | Inherits the DB finding's severity |
 | `regression` | Mean time for a key under the newest app version is more than 3× the previous version's and at least 20 ms slower, with 100 or more calls on each side | Both versions' timings, the DB finding for the key, and any DB finding that appeared between the two deploys | High, Critical above 10× |
-| `transaction_held_open` | p95 open time above 500 ms and DB time inside below 30 percent of it | DB side: idle-in-transaction sessions, blocking chains | High |
-| `pool_wait` | p95 wait above 100 ms | DB side: connection saturation; app side: operations with the longest open transactions | Medium, High when the DB is saturated |
+| `transaction_held_open` | p95 open time above 500 ms and DB time inside below 30 percent of it, over at least 20 transactions | DB side: idle-in-transaction sessions, blocking chains | Medium, High when the DB side is reporting idle or blocked sessions |
+| `pool_wait` | p95 wait above 100 ms over at least 20 acquisitions | DB side: connection saturation; app side: operations with the longest open transactions | Medium, High when the DB is saturated |
 | `db_finding` | Any DB-native finding that is not about a single statement — `hot_query_origin` owns those and says strictly more about each, so two rules never produce two cards for one finding | First seen, last seen, and the app operations that touch its subject | As produced by the check |
 
 ### Ranking
 
-One score decides what sits in the five "Fix first" slots: severity weight, times the share of app traffic that hits the subject, times a recency factor that favours things that started in the last 24 hours. A Critical that nothing calls loses to a High on the busiest endpoint. Muted and fixed insights are excluded; a fixed insight that fires again reopens itself.
+One score decides what sits in the five "Fix first" slots: severity weight, times the share of app traffic that hits the subject, times a recency factor that favours things that started in the last 24 hours. A Critical that nothing calls loses to a High on the busiest endpoint.
+
+The traffic share is the **widest** of an insight's subjects, not the sum of them: an unused-index finding carries both `index:` and `table:`, and adding them up scored every multi-subject insight as if it were about the whole application. Only `server` and `database` mean "all of it"; an index or a session has no traffic of its own, so the table it sits on is what scales it.
+
+Muted insights are shown only on the Insights tab, which is where the button that undoes it lives — filtering them everywhere makes muting a one-way door. A fixed insight that fires again reopens itself and is marked as having done so, because "the fix did not hold" is a different thing from "nobody has looked at this yet".
 
 ## The one page
 
 Server-rendered Razor with htmx for the drawer and the refresh, inline SVG sparklines, no Node toolchain. It has to feel like the Aspire dashboard or Seq: open the port, see the answer.
 
-- **Header.** App name and version, target name and server version, last scan and last window age. A stale window is a visible amber pill, because "the client is not sending" is the first-run problem.
+- **Header.** App name and version, target name and server version, last scan and last window age. A version changing in the header is a deploy. A stale window is a visible amber pill, because "the client is not sending" is the first-run problem.
 - **Fix first.** Five cards. Each has a title in plain language, one line of why, a call-site chip, a DB-evidence chip, a 24-hour sparkline and three actions: Copy evidence pack, Mute, Details.
 - **Evidence pack.** Markdown on the clipboard: the insight, both sides' numbers, the normalized query, the deploy versions. Written to be pasted into a coding agent.
-- **Tabs.** Insights, Queries, Findings, History, Settings. Findings is today's console report, kept as a tab so nothing is lost. Insights leads the nav from M2.4; the home page becomes the Fix first cards when M3 builds them, and is the Findings tab until then.
+- **Tabs.** Fix first is the home page. Then Insights, Queries, History, Findings, Settings, Diagnostics. Findings is today's console report, kept as a tab so nothing the collector produces is hidden behind an interpretation of it. Diagnostics was not in the original list and earned its place: a two-sided tool fails silently, and every one of those failures looks exactly like "nothing to report" on all the other tabs.
 
 ### The Queries tab
 

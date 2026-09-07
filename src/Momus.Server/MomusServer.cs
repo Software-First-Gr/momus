@@ -56,6 +56,7 @@ public static class MomusServer
         builder.Services.AddSingleton<IngestHandler>();
         builder.Services.AddSingleton<InsightEngine>();
         builder.Services.AddSingleton<DiagnosticsBuilder>();
+        builder.Services.AddScoped<Pages.HeaderInfo>();
         builder.Services.AddHostedService<RetentionService>();
         builder.Services.AddHostedService<InsightService>();
         builder.Services.AddRazorPages().AddApplicationPart(typeof(MomusServer).Assembly);

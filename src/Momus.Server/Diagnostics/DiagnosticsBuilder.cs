@@ -69,7 +69,7 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
             joined += rows.Count(r => r is { App: not null, Database: not null });
             appStatements += rows.Count(r => r.App is not null);
             databaseStatements += rows.Count(r => r.Database is not null);
-            insights += (await store.CurrentInsightsAsync(target.Id, ct)).Count;
+            insights += (await store.CurrentInsightsAsync(target.Id, ct: ct)).Count;
         }
 
         var report = new DiagnosticsReport
@@ -77,7 +77,7 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
             ServerVersion = MomusServer.Version,
             Uptime = now - Started,
             DataDirectory = Path.GetFullPath(options.DataDirectory),
-            DatabaseBytes = FileSize(store.DatabasePath),
+            DatabaseBytes = store.FileSizeBytes,
             SchemaVersion = await store.SchemaVersionAsync(ct),
             ScanInterval = options.ScanInterval,
             Window = InsightEngine.Window,
@@ -222,18 +222,6 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
         }
 
         return checks;
-    }
-
-    private static long FileSize(string path)
-    {
-        try
-        {
-            return File.Exists(path) ? new FileInfo(path).Length : 0;
-        }
-        catch (IOException)
-        {
-            return 0;
-        }
     }
 
     private static string Humanize(TimeSpan span) => span switch

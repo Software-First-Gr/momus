@@ -1,4 +1,5 @@
 @using Momus.Server
+@inject Momus.Server.Pages.HeaderInfo Header
 <!doctype html>
 <html lang="en">
 <head>
@@ -71,13 +72,20 @@
 <header>
     <div class="brand">Momus <span>@MomusServer.Version</span></div>
     <nav>
+        <a href="/" class="@(ViewData["Tab"] as string == "fix" ? "active" : "")">Fix first</a>
         <a href="/insights" class="@(ViewData["Tab"] as string == "insights" ? "active" : "")">Insights</a>
-        <a href="/" class="@(ViewData["Tab"] as string == "findings" ? "active" : "")">Findings</a>
+        <a href="/findings" class="@(ViewData["Tab"] as string == "findings" ? "active" : "")">Findings</a>
         <a href="/queries" class="@(ViewData["Tab"] as string == "queries" ? "active" : "")">Queries</a>
+        <a href="/history" class="@(ViewData["Tab"] as string == "history" ? "active" : "")">History</a>
         <a href="/settings" class="@(ViewData["Tab"] as string == "settings" ? "active" : "")">Settings</a>
         <a href="/diagnostics" class="@(ViewData["Tab"] as string == "diagnostics" ? "active" : "")">Diagnostics</a>
     </nav>
     <div class="grow"></div>
+    @{ var app = await Header.AppAsync(); }
+    @if (app is not null)
+    {
+        <div class="small muted">@app</div>
+    }
     @if (ViewData["HeaderStatus"] is string status)
     {
         <div class="small muted">@status</div>
@@ -94,6 +102,15 @@
 </footer>
 
 <script>
+    // One helper, used by every card and by the diagnostics page.
+    function momusCopy(button, id) {
+        const text = document.getElementById(id).textContent;
+        const label = button.textContent;
+        navigator.clipboard.writeText(text).then(
+            () => { button.textContent = 'Copied'; setTimeout(() => button.textContent = label, 1500); },
+            () => { button.textContent = 'Open it and copy manually'; });
+    }
+
     // Refresh while you are looking at it, but never while you have an evidence panel open or
     // the tab in the background. No build step, no framework, no surprise scroll jumps.
     setInterval(() => {

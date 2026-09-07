@@ -61,11 +61,40 @@ public class InsightStoreTests
     }
 
     [Fact]
+    public async Task A_muted_insight_leaves_the_page_but_can_still_be_found_to_unmute()
+    {
+        // Found by muting one on the running server: filtering muted insights out of every read
+        // meant the page carrying the Unmute button could not show them either, so muting was a
+        // one-way door.
+        await using var store = await MomusStore.InMemoryAsync();
+        await store.SaveInsightsAsync("shop", [NPlusOne("×6 per call"), HotQuery()], At(0));
+        await store.SetInsightStatusAsync("shop", NPlusOne("×6").IdentityKey, InsightStatus.Muted);
+
+        Assert.Equal("hot_query_origin", Assert.Single(await store.CurrentInsightsAsync("shop")).Kind);
+        Assert.Equal(2, (await store.CurrentInsightsAsync("shop", includeMuted: true)).Count);
+    }
+
+    [Fact]
+    public async Task An_insight_marked_fixed_that_comes_back_says_the_fix_did_not_hold()
+    {
+        await using var store = await MomusStore.InMemoryAsync();
+        await store.SaveInsightsAsync("shop", [NPlusOne("×6 per call")], At(0));
+        await store.SetInsightStatusAsync("shop", NPlusOne("×6").IdentityKey, InsightStatus.Fixed);
+
+        await store.SaveInsightsAsync("shop", [NPlusOne("×6 per call")], At(60));
+
+        var insight = Assert.Single(await store.CurrentInsightsAsync("shop"));
+        Assert.Equal(InsightStatus.Open, insight.Status);
+        Assert.True(insight.Reopened);
+    }
+
+    [Fact]
     public async Task The_worst_insight_is_first()
     {
         await using var store = await MomusStore.InMemoryAsync();
 
-        await store.SaveInsightsAsync("shop", [HotQuery(), NPlusOne("×6 per call")], At(0));
+        await store.SaveInsightsAsync("shop",
+            [HotQuery(), NPlusOne("×6 per call") with { Score = 12 }], At(0));
 
         var insights = await store.CurrentInsightsAsync("shop");
         Assert.Equal(Severity.Medium, insights[0].Severity);

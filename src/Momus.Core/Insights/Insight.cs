@@ -39,9 +39,16 @@ public sealed record Insight
     /// <summary>What this is about. With <see cref="Kind"/> it is the identity across evaluations.</summary>
     public IReadOnlyList<Subject> Subjects { get; init; } = [];
 
-    /// <summary>Structured supporting numbers, for the evidence pack (M3) and MCP (M4).</summary>
+    /// <summary>Structured supporting numbers, for the evidence pack and MCP (M4).</summary>
     public IReadOnlyDictionary<string, object?> Evidence { get; init; } =
         new Dictionary<string, object?>();
+
+    /// <summary>
+    /// What decides the order of the "Fix first" cards. A rule never sets this: severity is what a
+    /// rule knows, and how much traffic a problem is actually on is not. Ranking is applied after
+    /// every rule has run, over the same snapshot they all saw.
+    /// </summary>
+    public double Score { get; init; }
 
     /// <summary>
     /// Extra identity for when subjects alone cannot tell two insights of one kind apart. Cache

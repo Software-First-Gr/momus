@@ -400,6 +400,29 @@ public sealed partial class MomusStore : IAsyncDisposable
         return failures;
     }
 
+    /// <summary>
+    /// Returns the pages that deleted rows left behind. SQLite reuses freed pages but never gives
+    /// them back on its own, so without this the file keeps the high-water mark of a busy week.
+    /// </summary>
+    public async Task VacuumAsync(CancellationToken ct = default) =>
+        await WriteAsync(async connection => await ExecuteAsync(connection, "VACUUM", ct), ct);
+
+    /// <summary>How big the store is on disk, for the diagnostics page and the vacuum log line.</summary>
+    public long FileSizeBytes
+    {
+        get
+        {
+            try
+            {
+                return File.Exists(DatabasePath) ? new FileInfo(DatabasePath).Length : 0;
+            }
+            catch (IOException)
+            {
+                return 0;
+            }
+        }
+    }
+
     // ---- plumbing ----------------------------------------------------------------------
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken ct)

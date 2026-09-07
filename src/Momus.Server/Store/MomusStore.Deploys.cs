@@ -137,6 +137,104 @@ public sealed partial class MomusStore
     }
 
     /// <summary>
+    /// Findings per hour, and how many of them were serious, for the history chart. Counted from
+    /// the scans themselves rather than from finding_state, so a quiet hour is a real quiet hour
+    /// and not an absence of rows.
+    /// </summary>
+    public async Task<IReadOnlyList<FindingsAtHour>> FindingHistoryAsync(
+        string targetId, DateTimeOffset since, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT substr(s.started_at, 1, 13) AS hour,
+                   COUNT(f.id) / COUNT(DISTINCT s.id) AS per_scan,
+                   SUM(CASE WHEN f.severity >= 3 THEN 1 ELSE 0 END) / COUNT(DISTINCT s.id) AS serious
+            FROM scans s
+            LEFT JOIN findings f ON f.scan_id = s.id
+            WHERE s.target_id = $target AND s.succeeded = 1 AND s.started_at >= $since
+            GROUP BY hour
+            ORDER BY hour
+            """;
+        cmd.Parameters.AddWithValue("$target", targetId);
+        cmd.Parameters.AddWithValue("$since", Write(since));
+
+        var history = new List<FindingsAtHour>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var hour = DateTimeOffset.Parse(reader.GetString(0) + ":00:00Z", null,
+                System.Globalization.DateTimeStyles.AdjustToUniversal);
+
+            history.Add(new FindingsAtHour(hour, reader.GetInt32(1), reader.GetInt32(2)));
+        }
+        return history;
+    }
+
+    /// <summary>
+    /// Calls per hour for the last day, keyed the way subjects are — <c>query:abc</c> and
+    /// <c>operation:GET /orders/{id}</c> — so a card can draw a sparkline for whatever it is about
+    /// without a second query per card.
+    /// </summary>
+    /// <param name="hours">How many hourly buckets, ending with the current hour.</param>
+    public async Task<IReadOnlyDictionary<string, long[]>> HourlyCallsAsync(
+        int hours = 24, CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var since = now.AddHours(-hours + 1);
+        var series = new Dictionary<string, long[]>(StringComparer.Ordinal);
+
+        await using var connection = await OpenAsync(ct);
+
+        await Read($"query:", """
+            SELECT q.fingerprint, substr(w.to_at, 1, 13), SUM(q.calls)
+            FROM query_stats q JOIN windows w ON w.id = q.window_id
+            WHERE w.to_at >= $since
+            GROUP BY q.fingerprint, substr(w.to_at, 1, 13)
+            """);
+
+        await Read($"operation:", """
+            SELECT o.name, substr(w.to_at, 1, 13), SUM(o.calls)
+            FROM operation_stats o JOIN windows w ON w.id = o.window_id
+            WHERE w.to_at >= $since
+            GROUP BY o.name, substr(w.to_at, 1, 13)
+            """);
+
+        return series;
+
+        async Task Read(string prefix, string sql)
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$since", Write(since));
+
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var key = prefix + reader.GetString(0);
+                var bucket = Bucket(reader.GetString(1), now, hours);
+                if (bucket < 0) continue;
+
+                if (!series.TryGetValue(key, out var values)) series[key] = values = new long[hours];
+                values[bucket] += reader.GetInt64(2);
+            }
+        }
+    }
+
+    /// <summary>Which slot an hour stamp ("2026-09-07T13") belongs in, counting back from now.</summary>
+    private static int Bucket(string hourStamp, DateTimeOffset now, int hours)
+    {
+        if (!DateTimeOffset.TryParse(hourStamp + ":00:00Z", null,
+                System.Globalization.DateTimeStyles.AdjustToUniversal, out var at))
+        {
+            return -1;
+        }
+
+        var index = hours - 1 - (int)Math.Floor((now - at).TotalHours);
+        return index >= 0 && index < hours ? index : -1;
+    }
+
+    /// <summary>
     /// Adds up the per-window histograms SQLite concatenated for us. Summing eight buckets in SQL
     /// takes eight <c>json_extract</c> calls and is worth it in the rollup, which runs over a day
     /// of rows; here the group is small and the loop is clearer.
@@ -165,3 +263,8 @@ public sealed partial class MomusStore
         return total;
     }
 }
+
+/// <param name="Hour">The hour these scans ran in, UTC.</param>
+/// <param name="Findings">Findings in an average scan that hour.</param>
+/// <param name="Serious">How many of them were High or Critical.</param>
+public sealed record FindingsAtHour(DateTimeOffset Hour, int Findings, int Serious);

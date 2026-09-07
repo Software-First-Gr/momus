@@ -1,0 +1,77 @@
+@model InsightCard
+@{
+    var insight = Model.Insight;
+}
+
+<div style="padding:14px 0;border-top:1px solid var(--border)">
+    <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span class="pill @Humanize.Css(insight.Severity)">@Humanize.Label(insight.Severity)</span>
+        <span class="chip">@InsightsModel.KindLabel(insight.Kind)</span>
+        <strong style="font-size:14.5px">@insight.Title</strong>
+        @if (insight.IsNew)
+        {
+            <span class="pill new">NEW</span>
+        }
+        @if (insight.Reopened)
+        {
+            <span class="pill medium" title="It was marked fixed and fired again">REOPENED</span>
+        }
+        @if (insight.Status == "muted")
+        {
+            <span class="pill low">MUTED</span>
+        }
+        <div class="grow" style="flex:1"></div>
+        @if (Sparkline.Svg(Model.Series) is { Length: > 0 } svg)
+        {
+            <span class="muted" title="Calls per hour over the last day">@Html.Raw(svg)</span>
+        }
+    </div>
+
+    <p class="small" style="margin:10px 0 6px">@insight.Detail</p>
+
+    @if (insight.Recommendation is { } recommendation)
+    {
+        <p class="small muted" style="margin:0 0 10px">→ @recommendation</p>
+    }
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        @if (Model.CallSite is { } site)
+        {
+            <span class="chip" title="Where in your code">@site</span>
+        }
+        @if (Model.DatabaseSays is { } says)
+        {
+            <span class="chip" title="What the database's own scan says">db: @says</span>
+        }
+        <span class="chip" title="@insight.FirstSeen.ToString("u")">@Humanize.Since(insight.FirstSeen)</span>
+        @foreach (var subject in insight.Subjects)
+        {
+            <span class="chip">@subject</span>
+        }
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" onclick="momusCopy(this, '@Model.DomId')">Copy evidence pack</button>
+
+        <form method="post" asp-page="/Insights" asp-page-handler="Status" style="display:inline">
+            <input type="hidden" name="target" value="@ViewData["TargetId"]" />
+            <input type="hidden" name="identity" value="@insight.IdentityKey" />
+            <input type="hidden" name="status" value="@(insight.Status == "muted" ? "open" : "muted")" />
+            <button type="submit">@(insight.Status == "muted" ? "Unmute" : "Mute")</button>
+        </form>
+
+        <form method="post" asp-page="/Insights" asp-page-handler="Status" style="display:inline">
+            <input type="hidden" name="target" value="@ViewData["TargetId"]" />
+            <input type="hidden" name="identity" value="@insight.IdentityKey" />
+            <input type="hidden" name="status" value="fixed" />
+            <button type="submit" title="It stops being shown; if it fires again it reopens itself">
+                Mark fixed
+            </button>
+        </form>
+    </div>
+
+    <details style="margin-top:10px">
+        <summary class="small muted" style="cursor:pointer">Evidence pack</summary>
+        <pre id="@Model.DomId">@Model.EvidencePack</pre>
+    </details>
+</div>

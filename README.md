@@ -235,11 +235,31 @@ dotnet test                                                        # unit tests
 MOMUS_TEST_PG="Host=localhost;Username=postgres" dotnet test       # + live Postgres scan
 ```
 
+## What it tells you
+
+Open <http://localhost:4848> and the first thing is a list of five things to fix, ordered by what
+they are costing rather than by how alarming they sound — severity, times the share of your
+traffic that hits them, times how recently they started:
+
+```
+MEDIUM · N+1 · GET /api/orders/{id} runs one statement ×6 per call
+The same statement runs up to 6 times inside a single GET /api/orders/{id} (OrdersHandler.cs:42),
+2,523 times a minute at 0.2 ms each. Collapsing the loop would remove roughly 2,103 round trips a
+minute. The database ranks it too: #4 query by total time.
+```
+
+Each card copies as Markdown — both sides' numbers, the normalized statement, the versions —
+written to be pasted into a coding agent, which is how most of this actually reaches a fix.
+
+Six rules produce them: a loop inside one request, the database's most expensive statements mapped
+to the line that runs them, a statement that got slower with a deploy, a transaction held open
+across work that is not database work, a wait for a connection, and every database-side finding
+passed through with the endpoints that touch it. A deploy is not something you tell Momus about —
+it is a version turning up for the first time.
+
 ## Where this is going
 
-The two halves are joined; what is missing is the part that reads the join and tells you what to
-do about it. Next is the insight engine: *this endpoint has an N+1 on that table*, and after
-that *and it started with last Tuesday's deploy* — the question a general-purpose AI cannot
-answer, because it cannot see your database.
+1.0 adds MCP, so a coding agent asked "what is wrong with my database" answers from this evidence
+rather than from guesses, and an HTML report for a one-off audit.
 
 `docs/DESIGN.md` is the whole design; `docs/PLAN.md` is what happens next.
