@@ -2,8 +2,12 @@
 
 > Named after the Greek god of criticism. Point it at a database; it tells you what's wrong.
 
-**Status:** pre-release (`0.0.1`). The collector core, the CLI and `momus serve` work today;
-the API and package layout may change until 1.0.
+**Status:** pre-release. The collector core, the CLI, `momus serve` and the app-side client all
+work today — **from a checkout**. Nothing current is published: `Momus` 0.0.1 on nuget.org was
+uploaded to claim the id before the server existed, so it has no `serve` command, and no image
+has been pushed to GHCR yet. Both land with `v0.1.0`. Until then, build from source
+(`docker compose up --build`, or the *Quick start from source* section below). The API and
+package layout may change until 1.0.
 
 Momus is an AI-era DBA/SRE collector: it connects to your database, runs a suite of
 diagnostic checks against the engine's own statistics views, and produces structured,
@@ -29,25 +33,56 @@ Give it a minute of traffic, then compare the two.
 
 ## Run it against your own database
 
+Build the image once from a checkout — the published one arrives with `v0.1.0`:
+
 ```bash
-docker run -d --name momus -p 4848:4848 -v momus-data:/data \
+docker build -f src/Momus.Cli/Dockerfile -t momus .
+docker run -d --name momus -p 127.0.0.1:4848:4848 -v momus-data:/data \
   -e MOMUS_TARGETS__0__PROVIDER=postgres \
-  -e MOMUS_TARGETS__0__CONNECTIONSTRING="Host=host.docker.internal;Username=postgres;Password=…;Database=shop" \
-  ghcr.io/software-first-gr/momus
+  -e MOMUS_TARGETS__0__CONNECTIONSTRING="Host=host.docker.internal;Username=momus;Password=…;Database=shop" \
+  momus
 ```
 
 Then open <http://localhost:4848>. Momus scans every 60 seconds, keeps every scan in a SQLite
 file on `/data`, and shows each finding with the first and last time it saw it — which is the
 one thing a one-shot scan can never tell you.
 
-The image binds to all interfaces with no authentication. Put it behind your own proxy if that
-port leaves your machine.
+**The server has no authentication and binds to all interfaces inside the container**, and the
+connection string is stored as given in the SQLite file on `/data`. Publish the port to
+`127.0.0.1` as above, or put it behind your own proxy.
 
-Or as a dotnet tool, with no container:
+### The user it needs
+
+Momus only reads statistics views, but on both engines those are privileged. A dedicated
+read-only login is enough:
+
+```sql
+-- PostgreSQL. pg_monitor is the built-in monitoring role; without it pg_stat_activity and
+-- pg_stat_statements hide other users' statements, and half the checks see nothing.
+CREATE ROLE momus LOGIN PASSWORD '…';
+GRANT pg_monitor TO momus;
+GRANT CONNECT ON DATABASE shop TO momus;
+
+-- Query ranking needs the extension, installed once by a superuser, after adding
+-- pg_stat_statements to shared_preload_libraries and restarting.
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+```sql
+-- SQL Server. VIEW SERVER STATE covers the dm_os_* and dm_exec_* views;
+-- on Azure SQL Database, grant VIEW DATABASE STATE in the database instead.
+CREATE LOGIN momus WITH PASSWORD = '…';
+GRANT VIEW SERVER STATE TO momus;
+```
+
+Without `pg_stat_statements` Momus says so as an Info finding and keeps running; every other
+check still works.
+
+Or from a checkout, with no container:
 
 ```bash
-dotnet tool install -g Momus
-momus serve --target postgres:"Host=localhost;Username=postgres;Database=shop"
+dotnet run --project src/Momus.Cli -- serve \
+  --target postgres:"Host=localhost;Username=momus;Password=…;Database=shop"
 ```
 
 ## See what your application asked for

@@ -134,6 +134,8 @@ dates and staleness all need a database under real, changing load.
 ### M1.7 Release
 
 - [ ] Restore descriptive package metadata is already in the repo; verify nuget.org listing after publish.
+- [x] README says plainly that nothing current is published — `Momus` 0.0.1 predates the server and has no `serve` command, and no GHCR image exists yet — and gives the from-a-checkout path instead. It had been promising `dotnet tool install -g Momus && momus serve` and a `docker run ghcr.io/...`, neither of which works. Delete this line at the release, when both become true.
+- [x] README documents the grants the checks actually need: `pg_monitor` on Postgres (without it `pg_stat_activity` and `pg_stat_statements` hide other users' statements and half the checks see nothing) and `VIEW SERVER STATE` on SQL Server. "A read-only user is enough" was true and useless.
 - [ ] Note in the README that the `Momus` tool now runs on the ASP.NET Core shared framework, because the binary contains the server. Verified working: packed 0.0.1, installed with `dotnet tool install --tool-path`, both `scan` and `serve` run — the .NET SDK ships that framework, and installing a dotnet tool requires the SDK. It only matters for a machine with the runtime but not the SDK.
 - [ ] README: say plainly that `scan` and `serve` ask nothing of the application — they read the
       database's own statistics views, so they work just as well against a .NET Framework, Java or
