@@ -1,0 +1,105 @@
+@page
+@model DiagnosticsModel
+@{
+    ViewData["Title"] = "Momus — diagnostics";
+    ViewData["Tab"] = "diagnostics";
+    ViewData["HeaderStatus"] = Model.HeaderStatus;
+}
+
+<section>
+    <h1>Diagnostics</h1>
+    <p class="lede">
+        Momus has two halves and most of the ways they fail are quiet: a client that cannot reach
+        this server, a scanning user that cannot see other sessions' statements, two sides
+        fingerprinting the same SQL differently. Each of those looks exactly like "nothing to report".
+    </p>
+
+    @foreach (var check in Model.Report.Checks)
+    {
+        <div style="padding:10px 0;border-top:1px solid var(--border)">
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+                <span class="pill @DiagnosticsModel.Css(check.Verdict)">@DiagnosticsModel.Label(check.Verdict)</span>
+                <span class="small">@check.Headline</span>
+            </div>
+            @if (check.WhatToDo is { } todo)
+            {
+                <p class="small muted" style="margin:6px 0 0">→ @todo</p>
+            }
+        </div>
+    }
+</section>
+
+<section>
+    <h2>The join, over the last @($"{Model.Report.Window.TotalMinutes:N0} min")</h2>
+    <table>
+        <tbody>
+        <tr>
+            <td>Statements the app reported</td>
+            <td style="text-align:right">@Model.Report.AppStatements</td>
+        </tr>
+        <tr>
+            <td>Statements the database ranks</td>
+            <td style="text-align:right">@Model.Report.DatabaseStatements</td>
+        </tr>
+        <tr>
+            <td><strong>Matched on both sides</strong></td>
+            <td style="text-align:right"><strong>@Model.Report.Joined</strong></td>
+        </tr>
+        <tr>
+            <td>With a call site</td>
+            <td style="text-align:right">
+                @Model.Report.Ingest.StatementsWithCallSite / @Model.Report.Ingest.DistinctStatements
+                (@DiagnosticsMarkdown.Percent(Model.Report.Ingest.CallSiteCoverage))
+            </td>
+        </tr>
+        <tr>
+            <td>Insights</td>
+            <td style="text-align:right">@Model.Report.Insights</td>
+        </tr>
+        <tr>
+            <td>Dropped by the client · unattributed</td>
+            <td style="text-align:right">@Model.Report.Ingest.Dropped · @Model.Report.Ingest.Overflow</td>
+        </tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2>This server</h2>
+    <table>
+        <tbody>
+        <tr><td>Version</td><td style="text-align:right"><span class="chip">@Model.Report.ServerVersion</span></td></tr>
+        <tr><td>Client reporting</td><td style="text-align:right"><span class="chip">@(Model.Report.Ingest.ClientVersion ?? "none")</span></td></tr>
+        <tr><td>Uptime</td><td style="text-align:right">@Humanize.Ago(DateTimeOffset.UtcNow - Model.Report.Uptime)</td></tr>
+        <tr><td>Store</td><td style="text-align:right">@($"{Model.Report.DatabaseBytes / 1024.0 / 1024:N1} MB") · schema v@Model.Report.SchemaVersion</td></tr>
+        <tr><td>Windows kept</td><td style="text-align:right">@Model.Report.Ingest.RawWindows raw · @Model.Report.Ingest.HourlyWindows hourly</td></tr>
+        <tr><td>Data directory</td><td style="text-align:right"><code>@Model.Report.DataDirectory</code></td></tr>
+        </tbody>
+    </table>
+    <p class="small muted" style="margin-top:12px">
+        Connection strings are stored in that directory, and are deliberately not on this page.
+    </p>
+</section>
+
+<section>
+    <h2>Copy this when asking for help</h2>
+    <p class="lede">
+        Everything above as Markdown, with no connection strings in it. Paste it into an issue or
+        into a coding agent — it says more than a description of the symptom does.
+    </p>
+    <button type="button" onclick="momusCopy(this)">Copy</button>
+    <details open style="margin-top:10px">
+        <summary class="small muted" style="cursor:pointer">Report</summary>
+        <pre id="momus-report">@Model.Markdown</pre>
+    </details>
+</section>
+
+<script>
+    // The page is open <details>, so the layout's refresh leaves it alone while you copy.
+    function momusCopy(button) {
+        const text = document.getElementById('momus-report').textContent;
+        navigator.clipboard.writeText(text).then(
+            () => { button.textContent = 'Copied'; },
+            () => { button.textContent = 'Select it and copy manually'; });
+    }
+</script>

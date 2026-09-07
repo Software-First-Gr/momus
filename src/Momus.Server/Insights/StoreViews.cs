@@ -25,6 +25,7 @@ public static class StoreViews
         SeenCount = finding.SeenCount,
     };
 
+    /// <param name="stat">The store's own row for one statement.</param>
     /// <param name="now">
     /// The end of the stretch being measured. Passed in rather than read from the clock, so a rule
     /// evaluated twice on the same data reaches the same answer twice.

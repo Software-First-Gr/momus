@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Momus.Core.Ingest;
+using Momus.Server.Diagnostics;
 using Momus.Server.Insights;
 using Momus.Server.Store;
 
@@ -54,6 +55,7 @@ public static class MomusServer
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
         builder.Services.AddSingleton<IngestHandler>();
         builder.Services.AddSingleton<InsightEngine>();
+        builder.Services.AddSingleton<DiagnosticsBuilder>();
         builder.Services.AddHostedService<RetentionService>();
         builder.Services.AddHostedService<InsightService>();
         builder.Services.AddRazorPages().AddApplicationPart(typeof(MomusServer).Assembly);
@@ -73,6 +75,10 @@ public static class MomusServer
         app.MapRazorPages();
         app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = Version }));
         MapIngest(app);
+
+        // The same report the page shows, for a terminal: curl it and paste the output.
+        app.MapGet("/api/v1/diagnostics", async (DiagnosticsBuilder diagnostics, CancellationToken ct) =>
+            Results.Ok(await diagnostics.BuildAsync(ct)));
 
         logger.LogInformation("Momus {Version} on http://localhost:{Port}, data in {Data}.",
             Version, options.Port, Path.GetFullPath(options.DataDirectory));

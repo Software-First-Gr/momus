@@ -93,4 +93,41 @@ public sealed record StoredWindow
     public string? Version { get; init; }
     public long Overflow { get; init; }
     public required DateTimeOffset ReceivedAt { get; init; }
+
+    /// <summary>Which Momus.Client sent it, when the client is new enough to say.</summary>
+    public string? ClientVersion { get; init; }
+
+    /// <summary>Operations the client threw away rather than make a request wait.</summary>
+    public long Dropped { get; init; }
+}
+
+/// <summary>
+/// How the application half is doing, as opposed to whether it is there. Everything here is a
+/// number that is normally zero and that means something specific when it is not.
+/// </summary>
+public sealed record IngestHealth
+{
+    public int RawWindows { get; init; }
+    public int HourlyWindows { get; init; }
+
+    /// <summary>Windows received inside the stretch asked about.</summary>
+    public int WindowsSince { get; init; }
+
+    public long StatementRows { get; init; }
+    public int DistinctStatements { get; init; }
+
+    /// <summary>Statements Momus can point at a line of code. Zero of many is a bug, not a shrug.</summary>
+    public int StatementsWithCallSite { get; init; }
+
+    /// <summary>Executions the client could not attribute because a window hit its key limit.</summary>
+    public long Overflow { get; init; }
+
+    /// <summary>Operations the client threw away rather than make a request wait.</summary>
+    public long Dropped { get; init; }
+
+    public string? ClientVersion { get; init; }
+
+    /// <summary>Share of statements carrying a call site, which is the product's core promise.</summary>
+    public double CallSiteCoverage =>
+        DistinctStatements == 0 ? 0 : (double)StatementsWithCallSite / DistinctStatements;
 }

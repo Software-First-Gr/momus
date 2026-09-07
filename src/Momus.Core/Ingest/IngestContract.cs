@@ -27,7 +27,24 @@ public sealed record IngestBatch
     /// pretends the sample is complete.
     /// </summary>
     public long Overflow { get; init; }
+
+    /// <summary>How the client itself is doing. Absent from older clients, which is why it is optional.</summary>
+    public IngestClient? Client { get; init; }
 }
+
+/// <summary>
+/// The client's report on itself. Instrumentation that quietly loses data is worse than
+/// instrumentation that says it is losing data, and the application's own log is the wrong place
+/// to say it: the person looking at Momus is not tailing the app.
+/// </summary>
+/// <param name="Version">
+/// Which <c>Momus.Client</c> is reporting. The first question about any surprising number.
+/// </param>
+/// <param name="Dropped">
+/// Finished operations thrown away since the last window because the exporter could not keep up.
+/// Never zero for a reason: a request is allowed to lose instrumentation, never to wait for it.
+/// </param>
+public sealed record IngestClient(string? Version, long Dropped);
 
 /// <summary>
 /// Who is reporting. <c>Instance</c> is host and process, so two replicas of one app stay

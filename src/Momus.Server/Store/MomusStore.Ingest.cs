@@ -54,13 +54,16 @@ public sealed partial class MomusStore
             }
 
             windowId = Convert.ToInt64(await ScalarAsync(connection, """
-                INSERT INTO windows (app_id, instance, version, kind, from_at, to_at, overflow, received_at)
-                VALUES ($app, $instance, $version, 'raw', $from, $to, $overflow, $now)
+                INSERT INTO windows (app_id, instance, version, kind, from_at, to_at, overflow,
+                                     received_at, client_version, dropped)
+                VALUES ($app, $instance, $version, 'raw', $from, $to, $overflow, $now,
+                        $client, $dropped)
                 RETURNING id
                 """, ct, tx,
                 ("$app", appId), ("$instance", batch.App.Instance), ("$version", batch.App.Version),
                 ("$from", Write(batch.Window.From)), ("$to", Write(batch.Window.To)),
-                ("$overflow", batch.Overflow), ("$now", now)));
+                ("$overflow", batch.Overflow), ("$now", now),
+                ("$client", batch.Client?.Version), ("$dropped", batch.Client?.Dropped ?? 0)));
 
             foreach (var operation in batch.Operations)
             {
@@ -144,7 +147,7 @@ public sealed partial class MomusStore
         await using var connection = await OpenAsync(ct);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, app_id, from_at, to_at, version, overflow, received_at
+            SELECT id, app_id, from_at, to_at, version, overflow, received_at, client_version, dropped
             FROM windows
             WHERE ($app IS NULL OR app_id = $app)
             ORDER BY received_at DESC, id DESC LIMIT 1
@@ -163,6 +166,8 @@ public sealed partial class MomusStore
             Version = reader.IsDBNull(4) ? null : reader.GetString(4),
             Overflow = reader.GetInt64(5),
             ReceivedAt = Read(reader.GetString(6)),
+            ClientVersion = reader.IsDBNull(7) ? null : reader.GetString(7),
+            Dropped = reader.GetInt64(8),
         };
     }
 
@@ -295,6 +300,58 @@ public sealed partial class MomusStore
         return operations;
     }
 
+    /// <summary>
+    /// Counts that say whether the application half is healthy, rather than whether it exists.
+    /// Dropped operations and unattributed executions are the two ways the client loses data on
+    /// purpose, and both are invisible from anywhere but here.
+    /// </summary>
+    public async Task<IngestHealth> IngestHealthAsync(DateTimeOffset since, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT
+              (SELECT count(*) FROM windows WHERE kind = 'raw'),
+              (SELECT count(*) FROM windows WHERE kind = 'hourly'),
+              (SELECT count(*) FROM windows WHERE to_at >= $since),
+              (SELECT COALESCE(SUM(overflow), 0) FROM windows WHERE to_at >= $since),
+              (SELECT COALESCE(SUM(dropped), 0) FROM windows WHERE to_at >= $since),
+              (SELECT client_version FROM windows
+                WHERE client_version IS NOT NULL ORDER BY received_at DESC LIMIT 1),
+              (SELECT count(*) FROM query_stats q JOIN windows w ON w.id = q.window_id
+                WHERE w.to_at >= $since),
+              (SELECT count(DISTINCT q.fingerprint) FROM query_stats q JOIN windows w ON w.id = q.window_id
+                WHERE w.to_at >= $since),
+              (SELECT count(DISTINCT q.fingerprint) FROM query_stats q JOIN windows w ON w.id = q.window_id
+                WHERE w.to_at >= $since AND q.call_site <> '')
+            """;
+        cmd.Parameters.AddWithValue("$since", Write(since));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return new IngestHealth();
+
+        return new IngestHealth
+        {
+            RawWindows = reader.GetInt32(0),
+            HourlyWindows = reader.GetInt32(1),
+            WindowsSince = reader.GetInt32(2),
+            Overflow = reader.GetInt64(3),
+            Dropped = reader.GetInt64(4),
+            ClientVersion = reader.IsDBNull(5) ? null : reader.GetString(5),
+            StatementRows = reader.GetInt64(6),
+            DistinctStatements = reader.GetInt32(7),
+            StatementsWithCallSite = reader.GetInt32(8),
+        };
+    }
+
+    /// <summary>Which schema scripts have been applied. The first line of any bug report.</summary>
+    public async Task<long> SchemaVersionAsync(CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        return Convert.ToInt64(await ScalarAsync(connection,
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version", ct));
+    }
+
     // ---- retention ---------------------------------------------------------------------
 
     /// <summary>
@@ -344,9 +401,10 @@ public sealed partial class MomusStore
                     """;
 
                 var windowId = Convert.ToInt64(await ScalarAsync(connection, $"""
-                    INSERT INTO windows (app_id, instance, version, kind, from_at, to_at, overflow, received_at)
+                    INSERT INTO windows (app_id, instance, version, kind, from_at, to_at, overflow,
+                                         received_at, client_version, dropped)
                     SELECT $app, NULL, $version, 'hourly', MIN(w.from_at), MAX(w.to_at),
-                           SUM(w.overflow), $now
+                           SUM(w.overflow), $now, MAX(w.client_version), SUM(w.dropped)
                     FROM windows w WHERE {Match}
                     RETURNING id
                     """, ct, tx, [.. scope, ("$now", Now())]));

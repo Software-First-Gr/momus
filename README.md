@@ -144,6 +144,22 @@ For work that is not a request, name it yourself:
 using var operation = MomusOperation.Begin("NightlyInvoiceRun");
 ```
 
+## When it is not doing what you expected
+
+Open <http://localhost:4848/diagnostics>. Momus has two halves and most of the ways they fail are
+quiet — a client that cannot reach the server, a scanning user that cannot see other sessions'
+statements, two sides fingerprinting the same SQL differently. Each of those looks exactly like
+"nothing to report", so the page names them:
+
+```
+- OK — shop: scanned 12s ago, 54 finding(s).
+- OK — Shop.Api is reporting: 260 window(s) and 9 distinct statement(s) in the last hour.
+- OK — 6 statement(s) matched on both sides. 15 insight(s) from it.
+```
+
+It ends with the whole report as Markdown, with no connection strings in it, written to be pasted
+into an issue or a coding agent. `curl localhost:4848/api/v1/diagnostics` returns the same as JSON.
+
 ## Quick start from source
 
 Requires the .NET 10 SDK.

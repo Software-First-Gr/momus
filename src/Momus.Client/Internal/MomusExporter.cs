@@ -91,7 +91,10 @@ internal sealed class MomusExporter(
         }
 
         var known = targets.All();
-        var batch = window.ToBatch(App, known, known.Count == 1 ? known[0].Id : null);
+        var batch = window.ToBatch(App, known, known.Count == 1 ? known[0].Id : null) with
+        {
+            Client = new IngestClient(ClientVersion, dropped),
+        };
 
         try
         {
@@ -130,4 +133,11 @@ internal sealed class MomusExporter(
         options.Environment is { Length: > 0 } env ? env : environment.EnvironmentName);
 
     private IngestApp? _app;
+
+    /// <summary>
+    /// The client's own version, so a surprising number on the page can be traced to a build.
+    /// </summary>
+    private static readonly string? ClientVersion =
+        typeof(MomusExporter).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0];
 }
