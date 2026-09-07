@@ -5,3 +5,6 @@ obj/
 .idea/
 .DS_Store
 artifacts/
+
+# `momus serve` outside a container keeps its SQLite file here.
+.momus/
