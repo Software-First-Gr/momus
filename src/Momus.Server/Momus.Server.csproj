@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Momus.Server</RootNamespace>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+
+    <!-- Ships inside the Momus CLI and the Docker image, never as its own package (see DESIGN.md). -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- Pinned ahead of what Microsoft.Data.Sqlite pulls in: 2.1.11 carries GHSA-2m69-gcr7-jv3q. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
+    <ProjectReference Include="..\Momus.Postgres\Momus.Postgres.csproj" />
+    <ProjectReference Include="..\Momus.SqlServer\Momus.SqlServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Schema scripts are embedded so the store can migrate itself with no files to deploy. -->
+    <EmbeddedResource Include="Store\Schema\*.sql" />
+  </ItemGroup>
+
+</Project>

@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Momus.Server hosts the web UI, so testing it means running on the same shared framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
     <PackageReference Include="xunit" Version="2.4.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">
@@ -31,6 +36,7 @@
     <ProjectReference Include="..\..\src\Momus.Core\Momus.Core.csproj" />
     <ProjectReference Include="..\..\src\Momus.Postgres\Momus.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Momus.SqlServer\Momus.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Momus.Server\Momus.Server.csproj" />
   </ItemGroup>
 
 </Project>

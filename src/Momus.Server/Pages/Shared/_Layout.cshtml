@@ -1,0 +1,104 @@
+@using Momus.Server
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@(ViewData["Title"] ?? "Momus")</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f6f7f9; --panel: #fff; --border: #e2e5ea; --ink: #16181d; --muted: #5f6673;
+            --accent: #2f6feb; --info: #3f7fa6; --low: #7a7f8a; --medium: #b25e09; --high: #c0362c;
+            --critical: #8b2fbd; --good: #1a7f4b;
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        }
+        @@media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1115; --panel: #171a21; --border: #262b36; --ink: #e7e9ee; --muted: #98a0ae;
+                --accent: #6b9cff; --info: #6aa8c8; --low: #8d94a1; --medium: #e0a145; --high: #f0736a;
+                --critical: #c58af0; --good: #4cc38a;
+            }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--ink);
+               font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+        a { color: var(--accent); }
+        header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 14px 24px;
+                 display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; }
+        header .brand { font-weight: 600; letter-spacing: -0.01em; }
+        header .brand span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+        header nav { display: flex; gap: 14px; font-size: 14px; }
+        header nav a { text-decoration: none; color: var(--muted); padding-bottom: 2px; }
+        header nav a.active { color: var(--ink); border-bottom: 2px solid var(--accent); }
+        .grow { flex: 1; }
+        main { max-width: 1000px; margin: 0 auto; padding: 24px; }
+        section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+                  padding: 18px 20px; margin-bottom: 18px; }
+        h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.01em; }
+        h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 14px; }
+        p.lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+        .pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+                padding: 2px 8px; border-radius: 20px; border: 1px solid currentColor; }
+        .pill.info { color: var(--info); } .pill.low { color: var(--low); }
+        .pill.medium { color: var(--medium); } .pill.high { color: var(--high); }
+        .pill.critical { color: var(--critical); } .pill.ok { color: var(--good); }
+        .pill.stale { color: var(--medium); }
+        .pill.new { color: var(--accent); }
+        .chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+                border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+        .muted { color: var(--muted); }
+        .small { font-size: 13px; }
+        button, .button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px; cursor: pointer;
+                 border: 1px solid var(--border); background: var(--panel); color: var(--ink); text-decoration: none; }
+        button:hover, .button:hover { border-color: var(--accent); color: var(--accent); }
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        button.primary:hover { color: #fff; filter: brightness(1.08); }
+        input, select { font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 7px;
+                        border: 1px solid var(--border); background: var(--bg); color: var(--ink); width: 100%; }
+        label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px;
+             padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        code, pre { font-family: var(--mono); font-size: 12.5px; }
+        pre { background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+              padding: 10px 12px; overflow-x: auto; margin: 8px 0 0; }
+        footer { max-width: 1000px; margin: 0 auto; padding: 0 24px 40px; color: var(--muted); font-size: 12px; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="brand">Momus <span>@MomusServer.Version</span></div>
+    <nav>
+        <a href="/" class="@(ViewData["Tab"] as string == "findings" ? "active" : "")">Findings</a>
+        <a href="/settings" class="@(ViewData["Tab"] as string == "settings" ? "active" : "")">Settings</a>
+    </nav>
+    <div class="grow"></div>
+    @if (ViewData["HeaderStatus"] is string status)
+    {
+        <div class="small muted">@status</div>
+    }
+</header>
+
+<main>
+    @RenderBody()
+</main>
+
+<footer>
+    Read-only: Momus only ever reads the engine's own statistics views.
+    Bind it behind your own proxy if this port leaves your machine.
+</footer>
+
+<script>
+    // Refresh while you are looking at it, but never while you have an evidence panel open or
+    // the tab in the background. No build step, no framework, no surprise scroll jumps.
+    setInterval(() => {
+        if (document.hidden) return;
+        if (document.querySelector('details[open]')) return;
+        if (document.activeElement && ['INPUT', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) return;
+        location.reload();
+    }, 15000);
+</script>
+</body>
+</html>

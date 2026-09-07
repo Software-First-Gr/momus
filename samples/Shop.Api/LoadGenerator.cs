@@ -9,7 +9,8 @@ public sealed class LoadGenerator(
     SelfClient self,
     Telemetry telemetry,
     IHostApplicationLifetime lifetime,
-    ILogger<LoadGenerator> logger) : BackgroundService
+    ILogger<LoadGenerator> logger,
+    string startMode) : BackgroundService
 {
     /// <summary>Roughly how many requests per second each mode aims for.</summary>
     private static readonly Dictionary<string, int> Rates = new(StringComparer.OrdinalIgnoreCase)
@@ -19,6 +20,7 @@ public sealed class LoadGenerator(
         ["heavy"] = 20,
     };
 
+    /// <summary>Starts at whatever <c>Traffic</c> says, so the compose stack is alive on first open.</summary>
     public string Mode { get; private set; } = "off";
 
     public bool SetMode(string mode)
@@ -31,6 +33,8 @@ public sealed class LoadGenerator(
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        SetMode(startMode);
+
         // The generator calls this app over HTTP, so it has to wait until the app is listening.
         var started = new TaskCompletionSource();
         await using var registration = lifetime.ApplicationStarted.Register(() => started.TrySetResult());

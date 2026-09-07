@@ -17,6 +17,7 @@ The design behind all of this is `docs/DESIGN.md`.
 | Date | State |
 | --- | --- |
 | 2026-09-06 | Collector core 0.x exists (CLI `scan`, Postgres + SQL Server checks, 16 tests). Packages `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer` published as 0.0.1 to claim the ids. Repo public. CI: build/test/pack on push, publish on `v*` tags. M1 not started. |
+| 2026-09-07 | **M1.1–M1.6 done, plus the demo stack (M1.8).** `momus serve` scans on a schedule, keeps history in SQLite and shows findings with first-seen dates; `docker compose up` brings up Postgres + Momus + a flawed demo shop and the whole loop works end to end on this machine. 110 tests. Remaining for the `v0.1.0` release: run it beside a real database for a week (M1's "done when"), decide D3, and the housekeeping list. Nothing is published yet — no tag, no image pushed. |
 
 ## Decisions
 
@@ -73,28 +74,40 @@ The design behind all of this is `docs/DESIGN.md`.
 
 ### M1.3 Server project and store
 
-- [ ] New project `src/Momus.Server` (class library with `<FrameworkReference Include="Microsoft.AspNetCore.App" />`), referenced by `Momus.Cli`. Entry point `MomusServer.RunAsync(ServerOptions, CancellationToken)`.
-- [ ] Store on `Microsoft.Data.Sqlite`, no ORM. Versioned schema scripts in `src/Momus.Server/Store/Schema/NNN_*.sql` applied at startup, tracked in `schema_version`. M1 tables: `targets`, `scans`, `check_results`, `findings`, `finding_subjects`, `finding_state` (identity key = check id + sorted subjects; first_seen, last_seen, status open|muted|fixed).
-- [ ] `ScanScheduler : BackgroundService`: for each target every `ScanInterval` (default 60 s) run `CollectorEngine.ScanAsync`, persist the report, update `finding_state`. Failures are logged and never stop the loop.
-- [ ] Target sources: environment (`MOMUS_TARGETS__0__Provider`, `__ConnectionString`, `__Name`), CLI flag `--target <provider>:<connection string>`, and the Settings page. When running in a container (`DOTNET_RUNNING_IN_CONTAINER=true`) and a target host is `localhost`, retry once with `host.docker.internal` on connection failure and remember which worked.
-- [ ] Tests: store round-trip of a `ScanReport`; `finding_state` first/last seen across two persisted scans; scheduler runs against `FakeConnection`.
+- [x] New project `src/Momus.Server` (Razor class library with `<FrameworkReference Include="Microsoft.AspNetCore.App" />`), referenced by `Momus.Cli`. Entry point `MomusServer.RunAsync(ServerOptions, CancellationToken)`.
+- [x] Store on `Microsoft.Data.Sqlite`, no ORM. Versioned schema scripts in `src/Momus.Server/Store/Schema/NNN_*.sql` (embedded resources) applied at startup, tracked in `schema_version`. M1 tables: `targets`, `scans`, `check_results`, `findings`, `finding_subjects`, `finding_state` (identity key = check id + sorted subjects; first_seen, last_seen, status open|muted|fixed). Writes are serialized through one semaphore: SQLite has one writer and a scan a minute has nothing to contend over.
+- [x] `ScanScheduler : BackgroundService`: ticks every 2 s and scans each target that is due or has been requested, so a target added in the UI is scanned within seconds instead of at the end of the interval. Failures are logged, recorded on the target and never stop the loop.
+- [x] Target sources: environment (`MOMUS_TARGETS__0__PROVIDER`, `__CONNECTIONSTRING`, `__NAME`), CLI flag `--target [name=]<provider>:<connection string>`, and the Settings page. When running in a container (`DOTNET_RUNNING_IN_CONTAINER=true`) and a target host is `localhost`, retry once with `host.docker.internal` on connection failure and remember which worked.
+- [x] Tests: store round-trip of a `ScanReport`; `finding_state` first/last seen across two persisted scans; scheduler runs against `FakeConnection` (including a broken target that must not stop the others).
 
 ### M1.4 CLI `serve`
 
-- [ ] Refactor `src/Momus.Cli/Program.cs` into a small command dispatcher (`scan`, `serve`, later `report`, `mcp`). `scan` flags, output and exit codes stay byte-compatible.
-- [ ] `momus serve --data <dir> --port 4848 --scan-interval 60s [--target ...]`. Environment equivalents: `MOMUS_DATA`, `MOMUS_PORT`, `MOMUS_SCAN_INTERVAL`, `MOMUS_TARGETS__n__*`.
+- [x] Refactor `src/Momus.Cli/Program.cs` into a small command dispatcher (`scan`, `serve`, later `report`, `mcp`). `scan` flags, output and exit codes stay byte-compatible.
+- [x] `momus serve --data <dir> --port 4848 --scan-interval 60s [--target ...]`. Environment equivalents: `MOMUS_DATA`, `MOMUS_PORT`, `MOMUS_SCAN_INTERVAL`, `MOMUS_TARGETS__n__*`.
 
 ### M1.5 Web UI v0
 
-- [ ] Razor Pages in `src/Momus.Server/Pages`. Header: targets with server version, last scan age (amber pill when stale). Findings tab: the console report as a page, grouped by category, severity pills, first seen / last seen. Settings: add and remove a target.
-- [ ] Empty state per DESIGN.md: three copyable lines, and the DB half visibly alive.
-- [ ] Inline CSS, `prefers-color-scheme` dark mode, no JavaScript build step. htmx may be added when a partial refresh is needed.
+- [x] Razor Pages in `src/Momus.Server/Pages`. Header: target and server version, last scan age (amber STALE pill past three intervals, red when the scan itself failed). Findings tab: grouped by category, severity pills, first-seen / seen-count chips, subject chips, evidence in a `<details>`, and the worst 8 per check with a line saying how many more are in the store. Settings: add and remove a target, and what this server is configured with.
+- [x] Empty state: with no target at all it shows the three ways to add one (flag, environment, the form). The DESIGN.md empty state — "the DB half visibly alive while the app half is not yet" — needs the client, so it lands with M2.
+- [x] Inline CSS, `prefers-color-scheme` dark mode, no JavaScript build step. Ten lines of vanilla JS refresh the page every 15 s, and skip it while a details panel is open or the tab is in the background. htmx when a partial refresh is actually needed.
 
 ### M1.6 Docker and CI
 
-- [ ] `src/Momus.Cli/Dockerfile` on `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`, framework-dependent publish, entrypoint `momus serve --data /data`, `EXPOSE 4848`, `VOLUME /data`. Add `.dockerignore`.
-- [ ] Workflow job: buildx multi-arch (linux/amd64, linux/arm64) push to `ghcr.io/software-first-gr/momus`; `edge` on `develop`, semver + `latest` on `v*` tags. Uses `GITHUB_TOKEN` with `packages: write`.
-- [ ] README: serve quick start and the one-line `docker run`.
+- [x] `src/Momus.Cli/Dockerfile` on `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`, framework-dependent publish, `EXPOSE 4848`, `VOLUME /data`, `.dockerignore`. Entrypoint and command are split (`ENTRYPOINT dotnet Momus.Cli.dll` + `CMD serve`) so `docker run momus scan ...` works too; `MOMUS_DATA=/data` is baked in. 200 MB on arm64.
+- [x] Workflow job: buildx multi-arch (linux/amd64, linux/arm64) push to `ghcr.io/software-first-gr/momus`; `edge` on `develop`, semver + `latest` on `v*` tags. Uses `GITHUB_TOKEN` with `packages: write`. The tag is passed as a `VERSION` build arg so the image reports its own version. **Untested until the first push.**
+- [x] README: the `docker compose up` demo, the one-line `docker run`, and `momus serve` as a dotnet tool.
+
+### M1.8 Demo stack (added during M1, was M2.1)
+
+`samples/Shop.Api` was planned for M2, when it would have a client in it. It was built during M1
+instead because M1 has no other way to produce a database worth looking at: findings, first-seen
+dates and staleness all need a database under real, changing load.
+
+- [x] `samples/Shop.Api`: ASP.NET Core + EF Core + Npgsql against a seeded schema (60k products, 40k orders, 240k order lines, 150k audit rows). Deliberate flaws: no index on `order_lines.order_id`, `LOWER(name) LIKE '%x%'` search, two never-read indexes, an N+1 order page.
+- [x] Control panel at `:8080`: traffic off/light/heavy, one card per scenario saying what Momus should make of it, live `pg_stat_user_tables` counters, an activity log. Server-rendered, no Node.
+- [x] Scenarios that take minutes (idle-in-transaction, a six-minute query, 30 held connections) run as background jobs with a countdown and a Stop button, because Postgres only calls them problems after five minutes.
+- [x] Traffic goes through the app's own HTTP endpoints rather than straight to the database, so in M2 the operation names are real routes with no change to the sample.
+- [x] `docker-compose.yml` + `docker/postgres.conf`: Postgres with `pg_stat_statements`, a deliberately small `shared_buffers` and `max_connections=40` so the checks have something to find. Host port 55432, so it never fights an existing local Postgres.
 
 ### M1.7 Release
 

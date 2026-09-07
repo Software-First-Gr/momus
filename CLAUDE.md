@@ -17,19 +17,31 @@ Read first, in this order:
 dotnet build
 dotnet test                                  # unit tests; MOMUS_TEST_PG="Host=...;Username=..." adds a live Postgres scan test
 dotnet pack -c Release -o artifacts          # Momus (tool), Momus.Core, Momus.Postgres, Momus.SqlServer
+
 dotnet run --project src/Momus.Cli -- scan -p postgres -c "<connection string>" [--json report.json --quiet]
+dotnet run --project src/Momus.Cli -- serve --target postgres:"<connection string>"   # http://localhost:4848
+
+docker compose up --build                    # db + Momus (:4848) + the demo shop (:8080)
 ```
 
 Exit codes for `scan`: 0 clean, 3 High/Critical findings, 1 scan failed, 2 bad arguments.
 
+The demo stack is the fastest way to see a change work: the shop generates real traffic, so
+findings appear on their own. `docker compose down -v` resets both databases.
+
 ## Layout
 
 ```
-src/Momus.Core        engine + models: IDiagnosticCheck, IScanTarget, CollectorEngine, Finding, ScanReport
+src/Momus.Core        engine + models: IDiagnosticCheck, IScanTarget, CollectorEngine, Finding,
+                      ScanReport, Subject, SqlFingerprint
 src/Momus.Postgres    PostgresScanTarget + checks (Npgsql)
 src/Momus.SqlServer   SqlServerScanTarget + checks (Microsoft.Data.SqlClient)
-src/Momus.Cli         `momus` dotnet tool: scan today; serve / report / mcp per the plan
-tests/Momus.Tests     engine + threshold unit tests, opt-in live Postgres test
+src/Momus.Server      serve: SQLite store (versioned schema scripts), ScanScheduler, Razor Pages UI
+src/Momus.Cli         `momus` dotnet tool: scan + serve; the Docker image is built from here
+samples/Shop.Api      demo shop with deliberate problems and a control panel (:8080)
+tools/FingerprintCapture   regenerates the fingerprint fixture pairs from a live database
+tests/Momus.Tests     engine, thresholds, fingerprint fixtures, store, scheduler, options
+docker/               postgres.conf and init SQL for the demo stack
 docs/                 DESIGN.md, PLAN.md
 ```
 
@@ -39,6 +51,8 @@ docs/                 DESIGN.md, PLAN.md
 - **Thresholds are pure functions** (`PostgresThresholds`) so "when is it a problem" is testable without a database.
 - **Read-only by construction.** Every query targets statistics/system views only. Never add a query that writes or locks.
 - **Empty is healthy.** A check returning no findings is the good outcome.
+- **Every finding carries a `Subject`.** Typed keys (`table:public.orders`, `query:<fingerprint>`) are how findings are joined and how the store recognises the same finding across scans. Never key identity on a title.
+- **One fingerprint for both sides.** `SqlFingerprint` must give the same key to the app's SQL and to the statistics view's SQL. Its tests are real captured pairs; regenerate them with `tools/FingerprintCapture` rather than editing the fixtures by hand.
 - **Insights never open a database connection** (1.0). They read the store. `IDiagnosticCheck` reads live views; keep the two kinds apart.
 - **The client never sends literals, parameter values or result rows** (1.0). Only normalized text and aggregates leave the app.
 

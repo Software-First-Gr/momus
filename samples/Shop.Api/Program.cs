@@ -14,7 +14,12 @@ builder.Services.AddHttpClient("self");
 builder.Services.AddSingleton<Telemetry>();
 builder.Services.AddSingleton<BackgroundJobs>();
 builder.Services.AddSingleton<SelfClient>();
-builder.Services.AddSingleton<LoadGenerator>();
+builder.Services.AddSingleton(sp => new LoadGenerator(
+    sp.GetRequiredService<SelfClient>(),
+    sp.GetRequiredService<Telemetry>(),
+    sp.GetRequiredService<IHostApplicationLifetime>(),
+    sp.GetRequiredService<ILogger<LoadGenerator>>(),
+    builder.Configuration["Traffic"] ?? "off"));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LoadGenerator>());
 builder.Services.AddScoped<Workload>();
 

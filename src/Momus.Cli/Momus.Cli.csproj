@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <RollForward>Major</RollForward>
+    <!-- `serve` hosts the web UI, so the tool runs on the ASP.NET Core shared framework. -->
+    <UseAppHost>true</UseAppHost>
   </PropertyGroup>
 
   <!-- Published as the `momus` dotnet global tool: dotnet tool install -g Momus -->
@@ -17,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
+    <ProjectReference Include="..\Momus.Server\Momus.Server.csproj" />
     <ProjectReference Include="..\Momus.Postgres\Momus.Postgres.csproj" />
     <ProjectReference Include="..\Momus.SqlServer\Momus.SqlServer.csproj" />
   </ItemGroup>

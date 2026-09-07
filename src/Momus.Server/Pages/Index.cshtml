@@ -1,0 +1,189 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Momus — findings";
+    ViewData["Tab"] = "findings";
+    ViewData["HeaderStatus"] = Model.HeaderStatus;
+}
+
+@if (Model.Targets.Count == 0)
+{
+    <section>
+        <h1>Nothing to scan yet</h1>
+        <p class="lede">
+            Momus needs one thing: a connection string to a database it may read. It only ever reads
+            the engine's own statistics views, so a read-only user is enough.
+        </p>
+
+        <p class="small muted">Point it at a database from the command line —</p>
+        <pre>momus serve --target postgres:"Host=localhost;Username=postgres;Database=shop"</pre>
+
+        <p class="small muted">— or from the environment, which is what the Docker image expects:</p>
+<pre>docker run -d -p @(Model.Port):@(Model.Port) -v momus-data:/data \
+  -e MOMUS_TARGETS__0__PROVIDER=postgres \
+  -e MOMUS_TARGETS__0__CONNECTIONSTRING="Host=host.docker.internal;Username=postgres;Database=shop" \
+  ghcr.io/software-first-gr/momus</pre>
+
+        <p class="small muted">— or just <a href="/settings">add one here</a>.</p>
+    </section>
+}
+else
+{
+    <section>
+        <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+            <div>
+                <h1>@Model.Selected!.Name</h1>
+                <p class="lede" style="margin:0">
+                    @Model.Selected.Provider@(Model.Selected.DatabaseName is null ? "" : " / " + Model.Selected.DatabaseName)
+                    · scanning every @($"{Model.ScanInterval.TotalSeconds:N0}s")
+                    · @Model.ScanCount scan@(Model.ScanCount == 1 ? "" : "s") kept
+                </p>
+            </div>
+            <div class="grow" style="flex:1"></div>
+
+            @if (Model.Targets.Count > 1)
+            {
+                <form method="get" style="display:flex;gap:8px;align-items:center">
+                    <select name="target" onchange="this.form.submit()" style="width:auto">
+                        @foreach (var target in Model.Targets)
+                        {
+                            <option value="@target.Id" selected="@(target.Id == Model.Selected.Id)">@target.Name</option>
+                        }
+                    </select>
+                </form>
+            }
+
+            <form method="post" asp-page-handler="ScanNow">
+                <input type="hidden" name="target" value="@Model.Selected.Id" />
+                <button type="submit">Scan now</button>
+            </form>
+        </div>
+
+        @if (Model.Selected.LastError is { } error)
+        {
+            <p class="small" style="margin-top:14px">
+                <span class="pill high">SCAN FAILED</span>
+                <span class="muted">@Humanize.Ago(Model.Selected.LastScanAt) — @error</span>
+            </p>
+        }
+        else if (Model.IsStale && Model.LatestScan is not null)
+        {
+            <p class="small" style="margin-top:14px">
+                <span class="pill stale">STALE</span>
+                <span class="muted">Last scan @Humanize.Ago(Model.Selected.LastScanAt), which is longer than it should be.</span>
+            </p>
+        }
+    </section>
+
+    @if (Model.LatestScan is null)
+    {
+        <section>
+            <h1>Waiting for the first scan</h1>
+            <p class="lede">
+                The scheduler runs within a couple of seconds of a target being added. This page
+                refreshes itself.
+            </p>
+        </section>
+    }
+    else
+    {
+        <section>
+            <h2>Summary</h2>
+            <p style="margin:0 0 6px">
+                @foreach (var severity in new[] { Severity.Critical, Severity.High, Severity.Medium, Severity.Low, Severity.Info })
+                {
+                    var count = Model.Count(severity);
+                    if (count > 0)
+                    {
+                        <span class="pill @Humanize.Css(severity)" style="margin-right:8px">@Humanize.Label(severity) @count</span>
+                    }
+                }
+                @if (Model.Findings.Count == 0)
+                {
+                    <span class="pill ok">NOTHING TO REPORT</span>
+                }
+            </p>
+            <p class="small muted" style="margin:10px 0 0">
+                @Model.LatestScan.CheckCount checks in @($"{Model.LatestScan.Duration.TotalMilliseconds:N0}") ms,
+                @Humanize.Ago(Model.LatestScan.StartedAt).
+                @if (Model.Findings.Count == 0)
+                {
+                    <text>Either the database is healthy or it has not seen real traffic yet.</text>
+                }
+            </p>
+        </section>
+
+        @foreach (var group in Model.Findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
+        {
+            <section>
+                <h2>@group.Key</h2>
+                @foreach (var (checkId, hidden) in Model.HiddenIn(group))
+                {
+                    <p class="small muted" style="margin:-6px 0 10px">
+                        Showing the worst @IndexModel.MaxPerCheck of <code>@checkId</code>;
+                        @hidden more are in the store.
+                    </p>
+                }
+                @foreach (var finding in group.OrderByDescending(f => f.Severity))
+                {
+                    <div style="padding:12px 0;border-top:1px solid var(--border)">
+                        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+                            <span class="pill @Humanize.Css(finding.Severity)">@Humanize.Label(finding.Severity)</span>
+                            <strong style="font-size:14.5px">@finding.Title</strong>
+                            @if (finding.IsNew)
+                            {
+                                <span class="pill new">NEW</span>
+                            }
+                        </div>
+
+                        <p class="small" style="margin:8px 0 6px">@finding.Detail</p>
+
+                        @if (finding.Recommendation is not null)
+                        {
+                            <p class="small muted" style="margin:0 0 8px">→ @finding.Recommendation</p>
+                        }
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <span class="chip" title="@finding.FirstSeen.ToString("u")">@Humanize.Since(finding.FirstSeen)</span>
+                            <span class="chip">seen @finding.SeenCount×</span>
+                            @foreach (var subject in finding.Subjects)
+                            {
+                                <span class="chip">@subject</span>
+                            }
+                        </div>
+
+                        @if (finding.EvidenceJson is not "{}" and not "")
+                        {
+                            <details style="margin-top:8px">
+                                <summary class="small muted" style="cursor:pointer">Evidence</summary>
+                                <pre>@finding.EvidenceJson</pre>
+                            </details>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        @if (Model.Failures.Count > 0)
+        {
+            <section>
+                <h2>Checks that could not run</h2>
+                <p class="lede">
+                    A check that fails is never silent: usually a missing extension or a permission
+                    the scanning user does not have.
+                </p>
+                <table>
+                    <tbody>
+                    @foreach (var failure in Model.Failures)
+                    {
+                        <tr>
+                            <td style="width:30%"><code>@failure.CheckId</code></td>
+                            <td class="muted">@failure.Error</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </section>
+        }
+    }
+}

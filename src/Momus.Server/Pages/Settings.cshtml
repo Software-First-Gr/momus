@@ -1,0 +1,101 @@
+@page "/settings"
+@model SettingsModel
+@{
+    ViewData["Title"] = "Momus — settings";
+    ViewData["Tab"] = "settings";
+}
+
+@if (Model.Message is not null)
+{
+    <section><p class="small" style="margin:0"><span class="pill ok">DONE</span> @Model.Message</p></section>
+}
+@if (Model.Error is not null)
+{
+    <section><p class="small" style="margin:0"><span class="pill high">PROBLEM</span> @Model.Error</p></section>
+}
+
+<section>
+    <h2>Targets</h2>
+    @if (Model.Targets.Count == 0)
+    {
+        <p class="lede">None yet. Add one below.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+            <tr><th>Name</th><th>Provider</th><th>Database</th><th>Last scan</th><th>From</th><th></th></tr>
+            </thead>
+            <tbody>
+            @foreach (var target in Model.Targets)
+            {
+                <tr>
+                    <td><strong>@target.Name</strong></td>
+                    <td>@target.Provider</td>
+                    <td class="muted">@(target.DatabaseName ?? "—")</td>
+                    <td class="muted">
+                        @Humanize.Ago(target.LastScanAt)
+                        @if (target.LastError is not null)
+                        {
+                            <span class="pill high" style="margin-left:6px">FAILED</span>
+                        }
+                    </td>
+                    <td><span class="chip">@target.Source</span></td>
+                    <td style="text-align:right">
+                        <form method="post" asp-page-handler="Remove"
+                              onsubmit="return confirm('Remove @target.Name and its history?')">
+                            <input type="hidden" name="id" value="@target.Id" />
+                            <button type="submit">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <p class="small muted" style="margin:12px 0 0">
+            A target that came from the environment reappears on the next restart — remove it from
+            your compose file or run command instead.
+        </p>
+    }
+</section>
+
+<section>
+    <h2>Add a target</h2>
+    <form method="post" asp-page-handler="Add">
+        <div style="display:grid;grid-template-columns:1fr 160px;gap:12px;margin-bottom:12px">
+            <div>
+                <label for="name">Name</label>
+                <input id="name" name="name" placeholder="shop" />
+            </div>
+            <div>
+                <label for="provider">Provider</label>
+                <select id="provider" name="provider">
+                    @foreach (var provider in Model.Providers)
+                    {
+                        <option value="@provider">@provider</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div style="margin-bottom:12px">
+            <label for="connectionString">Connection string</label>
+            <input id="connectionString" name="connectionString"
+                   placeholder="Host=localhost;Username=postgres;Password=…;Database=shop" />
+        </div>
+        <button class="primary" type="submit">Add target</button>
+        <span class="small muted" style="margin-left:10px">
+            Stored as given, in the SQLite file. A read-only user is enough.
+        </span>
+    </form>
+</section>
+
+<section>
+    <h2>This server</h2>
+    <table>
+        <tbody>
+        <tr><td style="width:30%">Version</td><td><code>@MomusServer.Version</code></td></tr>
+        <tr><td>Scan interval</td><td><code>@($"{Model.ScanInterval.TotalSeconds:N0}s")</code> <span class="muted small">MOMUS_SCAN_INTERVAL</span></td></tr>
+        <tr><td>Data directory</td><td><code>@Model.DataDirectory</code> <span class="muted small">MOMUS_DATA</span></td></tr>
+        </tbody>
+    </table>
+</section>

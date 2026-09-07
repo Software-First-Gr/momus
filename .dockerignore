@@ -7,3 +7,6 @@
 .github
 docs
 *.md
+
+# Packed into every NuGet package and copied by the Dockerfiles.
+!README.md
