@@ -23,10 +23,13 @@ internal static class CallSites
 
     private static readonly ConcurrentDictionary<(string Key, string Operation), string?> Cache = new();
 
-    /// <summary>Namespaces that are never the answer: the framework, and Momus itself.</summary>
+    /// <summary>
+    /// Namespace roots that are never the answer: the framework, the providers, and Momus itself —
+    /// including its own adapter packages, which are as much "not your code" as EF Core is.
+    /// </summary>
     private static readonly string[] Ignored =
     [
-        "Momus.Client", "Microsoft.", "System.", "Npgsql", "Oracle.", "MySql.", "Dapper",
+        "Momus.Client", "Microsoft", "System", "Npgsql", "Oracle", "MySql", "Dapper",
     ];
 
     /// <summary>
@@ -60,8 +63,7 @@ internal static class CallSites
             // Async methods are compiled into a nested state machine; the interesting name is the
             // type that declares it, not "<OrderPageAsync>d__12".
             var declaring = type.DeclaringType ?? type;
-            var ns = declaring.Namespace ?? "";
-            if (Ignored.Any(prefix => ns.StartsWith(prefix, StringComparison.Ordinal))) continue;
+            if (IsFramework(declaring.Namespace ?? "")) continue;
 
             var file = frame!.GetFileName();
             var line = frame.GetFileLineNumber();
@@ -74,6 +76,15 @@ internal static class CallSites
 
         return null;
     }
+
+    /// <summary>
+    /// Matches on namespace boundaries rather than raw prefixes. A plain <c>StartsWith("Npgsql")</c>
+    /// also swallows an application namespace called <c>NpgsqlHelpers</c>, and the call site it
+    /// then reports is a frame further up that belongs to nobody the user recognises.
+    /// </summary>
+    private static bool IsFramework(string ns) => Ignored.Any(root =>
+        ns.Equals(root, StringComparison.Ordinal) ||
+        ns.StartsWith(root + ".", StringComparison.Ordinal));
 
     /// <summary>"&lt;OrderPageAsync&gt;d__12" is the compiler's name for "OrderPageAsync".</summary>
     private static string UnwrapAsyncName(string stateMachineName)

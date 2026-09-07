@@ -33,4 +33,11 @@
     <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The queue and the operation scope are internal on purpose: they are how the client works,
+         not what it offers. The tests read them because asserting "an interceptor fired" from the
+         outside would mean standing up a server to receive a window. -->
+    <InternalsVisibleTo Include="Momus.Client.Tests" />
+  </ItemGroup>
+
 </Project>

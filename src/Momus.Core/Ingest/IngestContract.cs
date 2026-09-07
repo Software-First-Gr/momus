@@ -80,7 +80,8 @@ public sealed record IngestOperation(
 /// the join with what the database reports. <c>CallSite</c> is the first frame outside the
 /// framework, e.g. "OrdersHandler.cs:42". <c>Sample</c> is normalized text, never the original,
 /// which could carry literals. <c>MaxRepeatsPerOperation</c> is the N in N+1: how often this one
-/// statement ran inside a single operation.
+/// statement ran inside a single operation. <c>Rows</c> is how many rows came back, which is
+/// what makes over-fetching visible: an endpoint that reads a hundred thousand rows to show ten.
 /// </summary>
 public sealed record IngestQuery(
     string Key,

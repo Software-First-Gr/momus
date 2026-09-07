@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The same three majors the client ships for. "It works on EF Core 8" is a claim that has
+         to be re-proved on every one of them: the way AddMomus reaches a DbContext is a container
+         trick, not a documented extension point. -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+
+    <!-- The variable under test is the EF Core major, not the runtime major: what could break is
+         the shape of the DbContextOptions registrations, and that comes from the package. Rolling
+         forward lets the net8.0 and net9.0 test hosts run on whatever runtime is installed, so the
+         suite is useful on a developer machine with only the newest one. CI installs all three
+         runtimes, which proves the other half. -->
+    <RollForward>LatestMajor</RollForward>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The client is an ASP.NET Core library; testing it means running on the same framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
+    <PackageReference Include="xunit" Version="2.4.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- SQLite is a real relational provider, so commands travel the same DbCommandInterceptor path
+       Npgsql and SqlClient do, with no server to run. Floored per major exactly like the client. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Momus.Client\Momus.Client.csproj" />
+  </ItemGroup>
+
+</Project>

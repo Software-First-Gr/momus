@@ -147,6 +147,15 @@ internal sealed class MomusCommandInterceptor(
     /// A reader's row count is only known once it has been read to the end, which happens after
     /// the execution was already recorded — so the rows are added to the entry afterwards.
     /// </summary>
+    /// <remarks>
+    /// <c>ReadCount</c> counts reads, not rows, and the difference is exactly one: the read that
+    /// finds the end. Measured on EF Core 8, 9 and 10 across every shape that matters —
+    /// <c>FirstOrDefaultAsync</c> hit and miss, <c>ToListAsync</c> of three and of none,
+    /// <c>SingleOrDefaultAsync</c>, <c>CountAsync</c>, <c>AnyAsync</c> — it is rows + 1 in all of
+    /// them, including the ones that look like they stop early. So one is subtracted, and
+    /// <c>Momus.Client.Tests</c> pins those shapes so a change in EF's enumeration is a failing
+    /// test rather than a row count that is quietly wrong everywhere.
+    /// </remarks>
     public override InterceptionResult DataReaderDisposing(
         DbCommand command, DataReaderDisposingEventData data, InterceptionResult result)
     {
@@ -155,7 +164,7 @@ internal sealed class MomusCommandInterceptor(
         {
             var fingerprint = Fingerprint(text);
             var callSite = CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
-            operation.AddRows(fingerprint.Key, callSite, data.ReadCount);
+            operation.AddRows(fingerprint.Key, callSite, data.ReadCount - 1);
         }
 
         return result;

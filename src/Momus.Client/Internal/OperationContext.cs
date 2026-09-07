@@ -101,6 +101,7 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     /// <summary>Adds rows to a statement already recorded, once its reader has been read to the end.</summary>
     public void AddRows(string key, string? callSite, long rows)
     {
+        if (rows <= 0) return;
         if (_queries.TryGetValue((key, callSite), out var tally)) tally.Rows += rows;
     }
 
