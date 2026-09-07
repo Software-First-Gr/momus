@@ -19,7 +19,7 @@ public static class DiagnosticsMarkdown
         md.AppendLine("## Momus diagnostics");
         md.AppendLine();
         md.AppendLine(Invariant($"- Server `{report.ServerVersion}`, up {Short(report.Uptime)}, schema v{report.SchemaVersion}"));
-        md.AppendLine(Invariant($"- Store {report.DatabaseBytes / 1024.0 / 1024:N1} MB, scanning every {Short(report.ScanInterval)}"));
+        md.AppendLine(Invariant($"- Store {Size(report.DatabaseBytes)}, scanning every {Short(report.ScanInterval)}"));
         md.AppendLine(Invariant($"- Client `{report.Ingest.ClientVersion ?? "none reporting"}`"));
         md.AppendLine();
 
@@ -100,6 +100,11 @@ public static class DiagnosticsMarkdown
         var trimmed = comma > 0 ? version[..comma] : version;
         return trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…";
     }
+
+    /// <summary>Kilobytes until it is worth megabytes. "0.0 MB" reads as "no data".</summary>
+    internal static string Size(long bytes) => bytes < 1024 * 1024
+        ? Invariant($"{bytes / 1024.0:N0} KB")
+        : Invariant($"{bytes / 1024.0 / 1024:N1} MB");
 
     /// <summary>Invariant culture writes "67 %"; English writes "67%".</summary>
     internal static string Percent(double fraction) => Invariant($"{fraction * 100:N0}%");

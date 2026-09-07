@@ -407,19 +407,30 @@ public sealed partial class MomusStore : IAsyncDisposable
     public async Task VacuumAsync(CancellationToken ct = default) =>
         await WriteAsync(async connection => await ExecuteAsync(connection, "VACUUM", ct), ct);
 
-    /// <summary>How big the store is on disk, for the diagnostics page and the vacuum log line.</summary>
+    /// <summary>
+    /// How much disk the store is actually using, for the diagnostics page and the vacuum log
+    /// line. The write-ahead log counts: in WAL mode recent writes live there, so the main file
+    /// alone can read as almost empty on a server that has been busy all morning.
+    /// </summary>
     public long FileSizeBytes
     {
         get
         {
-            try
+            long total = 0;
+
+            foreach (var path in new[] { DatabasePath, DatabasePath + "-wal", DatabasePath + "-shm" })
             {
-                return File.Exists(DatabasePath) ? new FileInfo(DatabasePath).Length : 0;
+                try
+                {
+                    if (File.Exists(path)) total += new FileInfo(path).Length;
+                }
+                catch (IOException)
+                {
+                    // An in-memory store has no files at all, and a locked one is not worth a page.
+                }
             }
-            catch (IOException)
-            {
-                return 0;
-            }
+
+            return total;
         }
     }
 

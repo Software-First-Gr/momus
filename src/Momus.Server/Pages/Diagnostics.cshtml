@@ -71,7 +71,7 @@
         <tr><td>Version</td><td style="text-align:right"><span class="chip">@Model.Report.ServerVersion</span></td></tr>
         <tr><td>Client reporting</td><td style="text-align:right"><span class="chip">@(Model.Report.Ingest.ClientVersion ?? "none")</span></td></tr>
         <tr><td>Uptime</td><td style="text-align:right">@Humanize.Ago(DateTimeOffset.UtcNow - Model.Report.Uptime)</td></tr>
-        <tr><td>Store</td><td style="text-align:right">@($"{Model.Report.DatabaseBytes / 1024.0 / 1024:N1} MB") · schema v@Model.Report.SchemaVersion</td></tr>
+        <tr><td>Store</td><td style="text-align:right">@DiagnosticsMarkdown.Size(Model.Report.DatabaseBytes) · schema v@Model.Report.SchemaVersion</td></tr>
         <tr><td>Windows kept</td><td style="text-align:right">@Model.Report.Ingest.RawWindows raw · @Model.Report.Ingest.HourlyWindows hourly</td></tr>
         <tr><td>Data directory</td><td style="text-align:right"><code>@Model.Report.DataDirectory</code></td></tr>
         </tbody>

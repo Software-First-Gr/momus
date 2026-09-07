@@ -66,7 +66,7 @@ public sealed class RetentionService(MomusStore store, ILogger<RetentionService>
         await store.VacuumAsync(ct);
         var after = store.FileSizeBytes;
 
-        logger.LogInformation("Retention: vacuumed, {Before:N1} MB to {After:N1} MB.",
-            before / 1024.0 / 1024, after / 1024.0 / 1024);
+        logger.LogInformation("Retention: vacuumed, {Before} to {After}.",
+            Diagnostics.DiagnosticsMarkdown.Size(before), Diagnostics.DiagnosticsMarkdown.Size(after));
     }
 }
