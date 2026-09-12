@@ -22,6 +22,7 @@ dotnet run --project src/Momus.Cli -- scan -p postgres -c "<connection string>" 
 dotnet run --project src/Momus.Cli -- serve --target postgres:"<connection string>"   # http://localhost:4848
 
 docker compose up --build                    # db + Momus (:4848) + the demo shop (:8080)
+SHOP_VERSION=1.1.0 SHOP_SLOW_BUILD=true docker compose up --build -d shop   # a deploy with a regression in it
 ```
 
 Exit codes for `scan`: 0 clean, 3 High/Critical findings, 1 scan failed, 2 bad arguments.

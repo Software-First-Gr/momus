@@ -37,6 +37,9 @@ builder.Services.AddSingleton(sp => new LoadGenerator(
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LoadGenerator>());
 builder.Services.AddScoped<Workload>();
 
+// Does nothing unless this is the slow build (SHOP_SLOW_BUILD=true); see docker-compose.yml.
+builder.Services.AddHostedService<CartTotalsRefresher>();
+
 // The other half. One line, after AddDbContext — that ordering is not a style preference: the
 // client reaches every context by rewriting the DbContextOptions registrations, so it can only
 // see the ones already registered. It will say so at startup if it finds none.
@@ -81,6 +84,23 @@ app.MapPost("/api/cart/{id:int}/items", async (int id, ShopDb db, Workload workl
     return Results.Ok(new { cart = id });
 });
 
+// Two more ordinary routes, each with an ordinary mistake. The slow_checkout and pool_exhaustion
+// scenarios call them; the regular traffic does not.
+
+app.MapPost("/api/checkout/{id:int}", async (int id, ShopDb db, Workload workload, HttpResponse response, CancellationToken ct) =>
+{
+    await workload.CheckoutAsync(db, id, ct);
+    response.Headers[SelfClient.QueriesHeader] = "2";
+    return Results.Ok(new { checkout = id });
+});
+
+app.MapGet("/api/export", async (ShopDb db, Workload workload, HttpResponse response, CancellationToken ct) =>
+{
+    var orders = await workload.ExportAsync(db, ct);
+    response.Headers[SelfClient.QueriesHeader] = "1";
+    return Results.Ok(new { orders });
+});
+
 // ---- the control panel behind the UI -------------------------------------------------
 
 app.MapGet("/api/status", async (ShopDb db, Telemetry telemetry, LoadGenerator load, BackgroundJobs jobs,
@@ -93,6 +113,8 @@ app.MapGet("/api/status", async (ShopDb db, Telemetry telemetry, LoadGenerator l
         host = db.Database.GetDbConnection().DataSource,
         momusUrl = configuration["MomusUrl"] ?? "http://localhost:4848",
         traffic = load.Mode,
+        version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3),
+        slowBuild = CartTotalsRefresher.Enabled,
         uptimeSeconds = (int)(DateTimeOffset.UtcNow - telemetry.StartedAt).TotalSeconds,
         operations = telemetry.Operations,
         queries = telemetry.Queries,

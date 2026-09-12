@@ -26,10 +26,21 @@ docker compose up --build
 ```
 
 - <http://localhost:8080> — the demo shop. Buttons for an N+1 page, an unindexed search, an
-  idle transaction, a connection flood. Each one says what Momus should make of it.
+  idle transaction, a connection flood, a checkout that holds its transaction open and an
+  export that hogs the connection pool. Each one says what Momus should make of it.
 - <http://localhost:4848> — Momus. Findings, with the day each one first appeared.
 
 Give it a minute of traffic, then compare the two.
+
+A deploy is one more command. This builds the shop again as version 1.1.0 with a regression in it —
+the cart update's SQL is unchanged, but a new background job holds a lock it has to wait for:
+
+```bash
+SHOP_VERSION=1.1.0 SHOP_SLOW_BUILD=true docker compose up --build -d shop
+```
+
+Within a minute or so of traffic Momus says which statement got slower, by how much, and in which
+version. Nobody tells it about the deploy; a new version turning up is the marker.
 
 ## Run it against your own database
 

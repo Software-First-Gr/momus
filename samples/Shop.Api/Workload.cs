@@ -56,6 +56,19 @@ public sealed class Workload(
             "Opens 30 idle connections and keeps them for three minutes.",
             "Pushes connection use past 75% of max_connections, which is the saturation check's threshold.",
             "background"),
+
+        // The two above use raw Npgsql connections, which Momus.Client cannot see, so they only
+        // exercise the database half. These two go through EF Core and exercise the app half.
+
+        new("slow_checkout", "Checkout holds its transaction open",
+            "POST /api/checkout/{id} opens a transaction, updates the cart, then waits 700 ms on a pretend payment provider before committing. Two callers, for two minutes.",
+            "Every statement is quick, so the database has nothing to say. The client sees transactions open for 700 ms with almost none of it in the database: transaction_held_open, with the line that opened it.",
+            "background"),
+
+        new("pool_exhaustion", "Exhaust the connection pool",
+            "GET /api/export takes a connection and keeps it for 1.5 s. Thirty callers share a pool of twenty, for two minutes.",
+            "Requests queue for a connection before they send a single statement: pool_wait, with the operations that waited. The database only ever sees twenty connections from the pool.",
+            "background"),
     ];
 
     private string ConnectionString =>
@@ -77,6 +90,10 @@ public sealed class Workload(
             "idle_transaction" => IdleTransaction(),
             "long_query" => LongQuery(),
             "connection_flood" => ConnectionFlood(),
+            "slow_checkout" => Callers("slow_checkout", "Slow checkout", callers: 2, TimeSpan.FromMinutes(2),
+                () => (HttpMethod.Post, $"/api/checkout/{Random.Shared.Next(1, Schema.Customers + 1)}")),
+            "pool_exhaustion" => Callers("pool_exhaustion", "Pool exhaustion", callers: 30, TimeSpan.FromMinutes(2),
+                () => (HttpMethod.Get, "/api/export")),
             _ => throw new ArgumentException($"Unknown scenario '{id}'.", nameof(id)),
         };
 
@@ -84,6 +101,75 @@ public sealed class Workload(
         telemetry.Log("run", message);
         logger.LogInformation("Scenario {Id}: {Result}", id, result);
         return message;
+    }
+
+    // ---- endpoints the app-side scenarios call ----------------------------------------
+
+    /// <summary>
+    /// Checkout with the classic mistake: something slow — a pretend payment provider — called while
+    /// the transaction is still open, so every lock the update took is held for the whole wait.
+    /// </summary>
+    public async Task CheckoutAsync(ShopDb db, int cartId, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        await db.Carts
+            .Where(c => c.Id == cartId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.UpdatedAt, DateTime.UtcNow), ct);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(700), ct); // the payment provider, inside the transaction
+
+        db.AuditLog.Add(new AuditEntry { At = DateTime.UtcNow, Actor = $"cart-{cartId}", Action = "checkout" });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
+    /// <summary>An export that keeps its connection while it writes the file: 1.5 s a call.</summary>
+    public async Task<int> ExportAsync(ShopDb db, CancellationToken ct)
+    {
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            var orders = await db.Orders.CountAsync(ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(1500), ct); // "writing the file", connection still held
+            return orders;
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="callers"/> loops against one endpoint until the job ends. Over HTTP, like
+    /// the rest of the traffic, so each call is an operation the client can name.
+    /// </summary>
+    private string Callers(string id, string title, int callers, TimeSpan duration,
+        Func<(HttpMethod Method, string Path)> next)
+    {
+        jobs.Start(id, title, duration, ct => Task.WhenAll(Enumerable.Range(0, callers).Select(async _ =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    var (method, path) = next();
+                    telemetry.Operation(await self.HitAsync(method, path, ct));
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception)
+                {
+                    // A request that timed out waiting is part of what these scenarios show.
+                    telemetry.Error();
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), CancellationToken.None);
+                }
+            }
+        })));
+
+        return $"{callers} caller(s) for {duration.TotalMinutes:N0} min";
     }
 
     private static readonly string[] Terms = ["widget", "gizmo", "sprocket", "bracket"];

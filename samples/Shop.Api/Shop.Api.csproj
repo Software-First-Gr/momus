@@ -10,6 +10,15 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- The demo's deploy. Compose passes these as build arguments, so a new version of the shop is
+       one command: a real application gets its version from its own build, and a version turning
+       up for the first time is all Momus needs to call it a deploy. ShopSlowBuild compiles in the
+       regression the demo exists to catch (CartTotalsRefresher). -->
+  <PropertyGroup>
+    <Version Condition="'$(ShopVersion)' != ''">$(ShopVersion)</Version>
+    <DefineConstants Condition="'$(ShopSlowBuild)' == 'true'">$(DefineConstants);SLOW_BUILD</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>

@@ -53,6 +53,14 @@ services:
     build:
       context: .
       dockerfile: samples/Shop.Api/Dockerfile
+      args:
+        # A deploy, in one command — and a regression, in the same one:
+        #   SHOP_VERSION=1.1.0 SHOP_SLOW_BUILD=true docker compose up --build -d shop
+        # The slow build adds a background job that holds a lock on carts, so the cart update gets
+        # slower without its SQL changing by a character. That is what `regression` compares: one
+        # statement, two versions. A statement whose text changed would be a different statement.
+        SHOP_VERSION: ${SHOP_VERSION:-1.0.0}
+        SHOP_SLOW_BUILD: ${SHOP_SLOW_BUILD:-false}
     environment:
       ConnectionStrings__Shop: Host=db;Port=5432;Username=postgres;Password=postgres;Database=shop;Maximum Pool Size=20
       # Where the browser can reach Momus, for the link in the demo's header.
