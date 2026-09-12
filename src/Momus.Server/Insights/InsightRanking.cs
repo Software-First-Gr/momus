@@ -8,14 +8,14 @@ namespace Momus.Server.Insights;
 /// busiest endpoint, because the question is not "what is worst" but "what is costing most".
 /// </summary>
 /// <remarks>
-/// Deliberately three factors and no more. Severity is what the rule concluded, traffic is how
-/// much of the application actually hits it, and recency favours something that started today
-/// over something that has been true for a month and evidently survivable. A fourth factor would
-/// be a knob nobody could reason about.
+/// Deliberately three factors and no more. Severity is what the rule concluded, reach is how much
+/// of the application actually hits it, and recency favours something that started today over
+/// something that has been true for a month and evidently survivable. A fourth factor would be a
+/// knob nobody could reason about.
 /// </remarks>
 public static class InsightRanking
 {
-    /// <summary>Doubling per level, so severity dominates until traffic differs by more than 2×.</summary>
+    /// <summary>Doubling per level, so severity dominates unless reach or recency say otherwise.</summary>
     public static double Weight(Severity severity) => severity switch
     {
         Severity.Critical => 16,
@@ -29,10 +29,17 @@ public static class InsightRanking
     public const double NewMultiplier = 2;
 
     /// <summary>
-    /// A subject nothing measurable touches still scores: the traffic share is a multiplier, not a
-    /// gate, and a database-side finding on a table no instrumented app names is still a finding.
+    /// Reach runs from 1, for a subject no instrumented application touches, to this, for one that
+    /// every statement hits. Three, so the busiest endpoint's High passes a Critical nothing calls.
     /// </summary>
-    public const double MinShare = 0.02;
+    public const double MaxReach = 3;
+
+    /// <summary>
+    /// The reach of an insight about something that carries no traffic of its own: the server, a
+    /// database, a session, an index on its own. Halfway, because traffic says nothing either way
+    /// about them — and scoring them as everything or as nothing were both wrong on the demo.
+    /// </summary>
+    public const double NeutralReach = 2;
 
     public static IReadOnlyList<Insight> Rank(
         IReadOnlyList<Insight> insights, IInsightContext context,
@@ -40,27 +47,46 @@ public static class InsightRanking
         insights.Select(i => i with { Score = Score(i, context, FirstSeen(firstSeen, i, context)) }).ToList();
 
     public static double Score(Insight insight, IInsightContext context, DateTimeOffset firstSeen) =>
-        Weight(insight.Severity) * Share(insight, context) * Recency(firstSeen, context.Now);
+        Weight(insight.Severity) * Reach(insight, context) * Recency(firstSeen, context.Now);
 
     /// <summary>
-    /// How much of the application's database traffic this insight's subject accounts for.
+    /// How far traffic moves this insight: <c>1 + 2 × share</c> when a subject carries traffic, and
+    /// <see cref="NeutralReach"/> when none does or no application is reporting at all.
+    /// </summary>
+    /// <remarks>
+    /// Found on the running demo, both ways round. A <c>server</c> subject used to count as all of
+    /// the traffic, which put a Low buffer-cache ratio second on Fix first; a <c>session</c> counted
+    /// as none of it, which put a High that had started minutes earlier — a transaction idle for five
+    /// minutes, blocking vacuum database-wide — fifth, below an Info card. Neither kind of subject is
+    /// something an application calls, so neither is scaled by what applications call.
+    /// </remarks>
+    public static double Reach(Insight insight, IInsightContext context) =>
+        Share(insight, context) is { } share ? 1 + (MaxReach - 1) * share : NeutralReach;
+
+    /// <summary>
+    /// The share of the application's database traffic this insight's subjects account for, or
+    /// null when none of them is a query, an operation or a table.
     /// </summary>
     /// <remarks>
     /// The widest subject wins rather than all of them adding up. An unused-index finding carries
     /// both <c>index:</c> and <c>table:</c>, and summing them made every multi-subject insight
     /// score as if it were about the whole application — which put a Low unused index above a High
-    /// sequential scan on the same table. Only <c>server</c> and <c>database</c> genuinely mean
-    /// "all of it"; an index or a session has no traffic of its own and contributes nothing, so
-    /// the table it sits on is what the insight is scaled by.
+    /// sequential scan on the same table. The index has no traffic of its own; the table it sits
+    /// on is what the insight is scaled by.
     /// </remarks>
-    public static double Share(Insight insight, IInsightContext context)
+    public static double? Share(Insight insight, IInsightContext context)
     {
+        var measurable = insight.Subjects
+            .Where(s => s.Kind is Subject.Query or Subject.Operation or Subject.Table)
+            .ToList();
+        if (measurable.Count == 0) return null;
+
         var totalCalls = context.QueryStats.Sum(q => q.Calls);
-        if (totalCalls == 0) return 1;
+        if (totalCalls == 0) return null;
 
         double widest = 0;
 
-        foreach (var subject in insight.Subjects)
+        foreach (var subject in measurable)
         {
             var hit = subject.Kind switch
             {
@@ -68,16 +94,14 @@ public static class InsightRanking
                     .Where(q => q.Fingerprint == subject.Key).Sum(q => q.Calls),
                 Subject.Operation => context.QueryStats
                     .Where(q => q.Operation == subject.Key).Sum(q => q.Calls),
-                Subject.Table => context.QueryStats
+                _ => context.QueryStats
                     .Where(q => TableMatch.Mentions(q.Sample, subject.Key)).Sum(q => q.Calls),
-                Subject.Server or Subject.Database => totalCalls,
-                _ => 0,
             };
 
             if (hit > widest) widest = hit;
         }
 
-        return Math.Clamp(widest / totalCalls, MinShare, 1);
+        return Math.Clamp(widest / totalCalls, 0, 1);
     }
 
     /// <summary>

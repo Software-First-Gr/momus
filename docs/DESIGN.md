@@ -226,9 +226,9 @@ public interface IInsight
 
 ### Ranking
 
-One score decides what sits in the five "Fix first" slots: severity weight, times the share of app traffic that hits the subject, times a recency factor that favours things that started in the last 24 hours. A Critical that nothing calls loses to a High on the busiest endpoint.
+One score decides what sits in the five "Fix first" slots: severity weight (doubling per level), times reach, times a recency factor that favours things that started in the last 24 hours. Reach is `1 + 2 × share`, where share is how much of the app's traffic hits the subject — so it runs from 1 to 3, and a Critical that nothing calls loses to a High on the busiest endpoint.
 
-The traffic share is the **widest** of an insight's subjects, not the sum of them: an unused-index finding carries both `index:` and `table:`, and adding them up scored every multi-subject insight as if it were about the whole application. Only `server` and `database` mean "all of it"; an index or a session has no traffic of its own, so the table it sits on is what scales it.
+The traffic share is the **widest** of an insight's subjects, not the sum of them: an unused-index finding carries both `index:` and `table:`, and adding them up scored every multi-subject insight as if it were about the whole application. An index has no traffic of its own, so the table it sits on is what scales it. An insight whose subjects carry no traffic at all — the server, a database, a session — gets a neutral reach of 2. Both obvious alternatives were wrong on the demo: counting `server` as all of the traffic put a Low buffer-cache ratio second on Fix first, and counting a session as none of it put a new High idle-in-transaction fifth, below an Info card.
 
 Muted insights are shown only on the Insights tab, which is where the button that undoes it lives — filtering them everywhere makes muting a one-way door. A fixed insight that fires again reopens itself and is marked as having done so, because "the fix did not hold" is a different thing from "nobody has looked at this yet".
 

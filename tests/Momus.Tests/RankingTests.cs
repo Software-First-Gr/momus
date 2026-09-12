@@ -75,48 +75,88 @@ public class RankingTests
             QueryStats = [Stat("hot", 8_000, "select ... from other o"), Stat("lines", 2_000)],
         };
 
-        var unusedIndex = new Insight
-        {
-            Kind = "db_finding", Severity = Severity.Low, Title = "unused index", Detail = "",
-            Subjects = [Subject.ForIndex("ix_order_lines_price"), Subject.ForTable("public.order_lines")],
-        };
-        var seqScan = new Insight
-        {
-            Kind = "db_finding", Severity = Severity.High, Title = "scanned", Detail = "",
-            Subjects = [Subject.ForTable("public.order_lines")],
-        };
+        var unusedIndex = DbFinding(Severity.Low, "unused index",
+            Subject.ForIndex("ix_order_lines_price"), Subject.ForTable("public.order_lines"));
+        var seqScan = DbFinding(Severity.High, "scanned", Subject.ForTable("public.order_lines"));
 
         var ranked = InsightRanking.Rank([unusedIndex, seqScan], context);
 
         Assert.Equal("scanned", ranked.OrderByDescending(i => i.Score).First().Title);
-        Assert.Equal(InsightRanking.Share(seqScan, context), InsightRanking.Share(unusedIndex, context), 5);
+        Assert.Equal(InsightRanking.Share(seqScan, context), InsightRanking.Share(unusedIndex, context));
     }
 
     [Fact]
-    public void A_server_wide_problem_is_hit_by_everything()
+    public void A_server_wide_problem_is_neither_all_of_the_traffic_nor_none_of_it()
     {
         var context = new InsightSnapshot { QueryStats = [Stat("a", 10_000)] };
 
-        var everywhere = new Insight
-        {
-            Kind = "db_finding", Severity = Severity.Medium, Title = "cache hit ratio", Detail = "",
-            Subjects = [Subject.ForServer()],
-        };
+        var everywhere = DbFinding(Severity.Medium, "cache hit ratio", Subject.ForServer());
+        var session = DbFinding(Severity.High, "idle in transaction", Subject.ForSession(44));
 
-        Assert.Equal(1, InsightRanking.Share(everywhere, context), 5);
+        Assert.Null(InsightRanking.Share(everywhere, context));
+        Assert.Equal(InsightRanking.NeutralReach, InsightRanking.Reach(everywhere, context));
+        Assert.Equal(InsightRanking.NeutralReach, InsightRanking.Reach(session, context));
     }
 
     [Fact]
-    public void A_subject_no_application_touches_still_scores()
+    public void A_table_no_application_touches_still_scores()
     {
         // A database-side finding about a table nothing instrumented names is still a finding;
-        // the traffic share is a multiplier, not a gate.
-        var context = new InsightSnapshot { QueryStats = [Stat("other", 10_000)] };
+        // reach is a multiplier, not a gate.
+        var context = new InsightSnapshot { QueryStats = [Stat("other", 10_000, "select ? from carts c")] };
 
-        var ranked = InsightRanking.Rank([Insight(Severity.High, "unknown")], context);
+        var ranked = InsightRanking.Rank([DbFinding(Severity.High, "scanned", Subject.ForTable("public.audit_log"))], context);
 
         Assert.True(ranked[0].Score > 0);
-        Assert.Equal(InsightRanking.MinShare, InsightRanking.Share(ranked[0], context), 5);
+        Assert.Equal(0, InsightRanking.Share(ranked[0], context));
+        Assert.Equal(1, InsightRanking.Reach(ranked[0], context));
+    }
+
+    [Fact]
+    public void A_Low_server_wide_ratio_sits_below_the_loop_and_the_scanned_table()
+    {
+        // Fix first on the demo, 2026-09-12: "Buffer cache hit ratio is 98.9 %" (Low, new) was
+        // second, above the N+1 on the busiest endpoint and a High sequential scan.
+        var context = DemoTraffic();
+        var buffer = DbFinding(Severity.Low, "buffer cache", Subject.ForServer());
+        var loop = new Insight
+        {
+            Kind = "n_plus_one", Severity = Severity.Medium, Title = "loop", Detail = "",
+            Subjects = [Subject.ForQuery("product-by-id")],
+        };
+        var scanned = DbFinding(Severity.High, "order_lines scanned", Subject.ForTable("public.order_lines"));
+
+        var ranked = InsightRanking.Rank([buffer, loop, scanned], context, new Dictionary<string, DateTimeOffset>
+        {
+            [buffer.IdentityKey] = context.Now,
+            [loop.IdentityKey] = context.Now.AddDays(-5),
+            [scanned.IdentityKey] = context.Now.AddDays(-5),
+        });
+
+        Assert.Equal(["order_lines scanned", "loop", "buffer cache"],
+            ranked.OrderByDescending(i => i.Score).Select(i => i.Title));
+    }
+
+    [Fact]
+    public void A_High_that_started_minutes_ago_on_a_session_outranks_an_Info_card_on_a_busy_query()
+    {
+        // Fix first on the demo, 2026-09-12: a transaction idle for five minutes (High, new) was
+        // fifth, below "#8 by total database time" (Info) on the busiest statement.
+        var context = DemoTraffic();
+        var idle = DbFinding(Severity.High, "idle in transaction", Subject.ForSession(44));
+        var hot = new Insight
+        {
+            Kind = "hot_query_origin", Severity = Severity.Info, Title = "hot", Detail = "",
+            Subjects = [Subject.ForQuery("product-by-id")],
+        };
+
+        var ranked = InsightRanking.Rank([hot, idle], context, new Dictionary<string, DateTimeOffset>
+        {
+            [idle.IdentityKey] = context.Now,
+            [hot.IdentityKey] = context.Now.AddDays(-5),
+        });
+
+        Assert.Equal("idle in transaction", ranked.OrderByDescending(i => i.Score).First().Title);
     }
 
     [Fact]
@@ -130,6 +170,18 @@ public class RankingTests
         Assert.True(ranked[1].Score > ranked[0].Score);
     }
 
+    /// <summary>Roughly the demo's calls per minute under heavy traffic.</summary>
+    private static InsightSnapshot DemoTraffic() => new()
+    {
+        QueryStats =
+        [
+            Stat("product-by-id", 1_519, "select p.id from products p where p.id = ?"),
+            Stat("lines-by-order", 253, "select o.id from order_lines o where o.order_id = ?"),
+            Stat("cart-update", 378, "update carts c set total = c.total + ? where c.id = ?"),
+            Stat("search", 100, "select p.id from products p where lower (p.name) like ?"),
+        ],
+    };
+
     private static Insight Insight(Severity severity, string key) => new()
     {
         Kind = "n_plus_one",
@@ -137,6 +189,15 @@ public class RankingTests
         Title = key,
         Detail = "",
         Subjects = [Subject.ForQuery(key)],
+    };
+
+    private static Insight DbFinding(Severity severity, string title, params Subject[] subjects) => new()
+    {
+        Kind = "db_finding",
+        Severity = severity,
+        Title = title,
+        Detail = "",
+        Subjects = subjects,
     };
 
     private static QueryStatView Stat(
