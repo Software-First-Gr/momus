@@ -31,7 +31,7 @@ From running the demo stack end to end on 2026-09-12: heavy traffic, all eight s
 - [x] `pg.connection_saturation` counted every row of `pg_stat_activity`, background workers included, so the demo said "Using 43 of 40 available connections". Count `backend_type = 'client backend'` only. Measured on the demo database at rest: 11 rows, 3 of them clients.
 - [x] Diagnostics printed `schema v@Model.Report.SchemaVersion` literally, because Razor reads `v@Model` as an email address. Uptime read "1 min ago".
 - [x] Prose: "across 1 calls", "0.0s across 2,910 calls", `00:05:04` in session titles. One invariant helper in Core (`Prose`) for counts, totals and durations.
-- [ ] Decide D3. Two facts carry most of it. An Apache-2.0 release cannot be taken back: `v0.1.0` under Apache is forkable forever, whatever later versions say, so the decision really is due before the tag. And FSL permits internal use and modification — it stops someone reselling Momus as a competing product, not a company deleting a Pro license check for its own use; protecting Pro needs the Pro code under separate terms either way.
+- [x] Decide D3 — **Apache-2.0 for everything** (D3). Two facts carried most of it. An Apache-2.0 release cannot be taken back: `v0.1.0` under Apache is forkable forever, whatever later versions say, so the decision really is due before the tag. And FSL permits internal use and modification — it stops someone reselling Momus as a competing product, not a company deleting a Pro license check for its own use; protecting Pro needs the Pro code under separate terms either way.
 
 **Tue — both sides cover the same hour**
 
@@ -63,7 +63,7 @@ From running the demo stack end to end on 2026-09-12: heavy traffic, all eight s
 | --- | --- | --- |
 | D1 | 2026-09-06 | App-side capture lives in a new package `Momus.Client`, never inside Switchboard. Switchboard stays a few hundred lines with one dependency; an optional `Momus.Client.Switchboard` adapter (one pipeline behavior) lives in this repo later. |
 | D2 | 2026-09-06 | One repository, one version number, one `v*` tag publishes every NuGet package, the dotnet tool and the Docker image together. Split only if release cadences diverge. |
-| D3 | 2026-09-06 | **Open.** Libraries (`Momus.Core`, providers, `Momus.Client`) are Apache-2.0. Proposed: the executable (`Momus` tool, which will contain the server) moves to FSL-1.1-ALv2 when the server ships. Alternative: Apache-2.0 for everything. Decide before the M1 release. |
+| D3 | 2026-09-12 | **Apache-2.0 for everything, the server and the executable included.** Proposed on 2026-09-06: the `Momus` tool and image, which contain the server, under FSL-1.1-ALv2. Decided against, for three reasons. FSL forbids a competing commercial product but permits internal use and modification, so it would not have protected a Pro license check anyway — Pro (M5) needs its own terms whatever the rest is under. It costs exactly where M4 needs traction: "is it open source?" is the first question on r/dotnet and HN, and some companies' policies block non-OSI tools. And the realistic risk to a solo tool before launch is being ignored, not cloned. The cost accepted: an Apache release cannot be taken back, so `v0.1.0` and every version after it can be forked for good. No code change — `LICENSE` and `PackageLicenseExpression` already say Apache-2.0. When Pro is built it goes in a separately licensed piece, rather than relicensing this tree. |
 | D4 | 2026-09-06 | The server's store is SQLite on a volume. No second database in the image. |
 | D5 | 2026-09-06 | Dev loop first. Client is on by default only in Development. No OTLP ingestion, no Dapper/raw ADO.NET capture, no MySQL, no hosted version in 1.0. |
 | D6 | 2026-09-06 | Product rule: a feature that only restates what the database already says ranks below any feature that joins app side and DB side. The three 1.0 insights are N+1 with real cost, expensive query mapped to code, regression since deploy. |
@@ -110,7 +110,7 @@ From running the demo stack end to end on 2026-09-12: heavy traffic, all eight s
 
 - [ ] Decide branch policy (see Open questions) and apply it.
 - [ ] Add CI and NuGet badges to `README.md` like Switchboard's.
-- [ ] Decide D3 (license of the executable).
+- [x] Decide D3 (license of the executable). Apache-2.0 for everything, 2026-09-12.
 - [ ] Add an embedded `PackageIcon` to `Directory.Build.props` (Switchboard has one since `6828783`). NuGet lists it as a best practice reviewers check for prefix reservation.
 - [ ] At the M1 release, once the packages carry real content, mail `account@nuget.org` from owner `nifragos` requesting **both** reservations in one application: `Momus.` (the prefix and the exact id `Momus`) and `SoftwareFirst.` (covers `SoftwareFirst.Switchboard`), with a link to the repo. Gives the verified badge and blocks strangers from publishing `Momus.*`. `SoftwareFirst.` is a near-certain grant, matching the author and org metadata; `Momus.` is a maybe, since the criteria say to avoid common or generic words and Momus is a dictionary word - so asking for both costs nothing. See D11.
 
@@ -182,7 +182,7 @@ dates and staleness all need a database under real, changing load.
       database's own statistics views, so they work just as well against a .NET Framework, Java or
       PHP app as against a modern .NET one. True today, costs a paragraph, and it is the cheapest
       probe for whether legacy shops are an audience (M6).
-- [ ] Decide D3 and set the license expression for the `Momus` tool accordingly.
+- [x] Decide D3 and set the license expression for the `Momus` tool accordingly. Nothing to set: `Directory.Build.props` already gives every package `Apache-2.0`.
 - [ ] Tag `v0.1.0` — the first real release, carrying M1 through M3 (D18). Verify packages and image.
 
 ---
@@ -284,7 +284,7 @@ JSON but does not say where the types live; this is that decision.
   - Both bugs here were found by clicking the buttons on the running server rather than by a test. Muting filtered the insight out of *every* read, including the page carrying the Unmute button, so it was a one-way door. And "marked fixed, came back" was indistinguishable from "never went away" one tick later, because reopening is immediate — there is a `reopened` flag and a pill for it now.
 - [x] History tab: findings per scan over a week as one inline SVG, with every deploy drawn as a vertical line. One chart, because the only question worth a chart is "did this start when we shipped something".
 - [x] Retention job: nightly `VACUUM` beside the ten-minute trim. SQLite reuses freed pages but never returns them, so without it the file keeps the high-water mark of the busiest week it ever had.
-- [ ] ~~Tag `v0.3.0`.~~ Folded into M1.7's `v0.1.0` by D18. **Not done, deliberately.** A `v*` tag publishes every package to nuget.org and the image to GHCR; `v0.1.0` and `v0.2.0` never happened, D3 is still open, and M1's "done when" — a week beside a real database — has not been served. Releasing is a decision about the product, not the last task of a milestone.
+- [ ] ~~Tag `v0.3.0`.~~ Folded into M1.7's `v0.1.0` by D18. **Not done, deliberately.** A `v*` tag publishes every package to nuget.org and the image to GHCR; `v0.1.0` and `v0.2.0` never happened, D3 was still open (decided 2026-09-12), and M1's "done when" — a week beside a real database — has not been served. Releasing is a decision about the product, not the last task of a milestone.
 
 ---
 

@@ -65,8 +65,8 @@ Two collectors, one store, one engine. The client never talks to the database on
 | `Momus.Postgres`, `Momus.SqlServer` | NuGet | Apache-2.0 | Scan targets and DB-native checks | Exist, findings gain subjects |
 | `Momus.Client` | NuGet | Apache-2.0 | ASP.NET Core request scope, EF Core interceptors, aggregator, exporter | New |
 | `Momus.Client.Switchboard`, `Momus.Client.MediatR` | NuGet | Apache-2.0 | One pipeline behavior each that names the current operation for non-HTTP work | Later, optional |
-| `Momus.Server` | Inside the CLI | FSL-1.1-ALv2 (proposed, decision D3) | Ingest, scheduler, SQLite store, insight engine, web UI, MCP | New |
-| `Momus.Cli` | Docker image, dotnet tool `Momus` | FSL-1.1-ALv2 (proposed), because the binary contains the server | `scan`, `serve`, `report`, `mcp` | Exists, gains commands |
+| `Momus.Server` | Inside the CLI | Apache-2.0 (D3) | Ingest, scheduler, SQLite store, insight engine, web UI, MCP | New |
+| `Momus.Cli` | Docker image, dotnet tool `Momus` | Apache-2.0 (D3) | `scan`, `serve`, `report`, `mcp` | Exists, gains commands |
 
 Multi-target the client the way Switchboard does, net8.0 through net10.0, because the client has to live inside other people's apps. The server and CLI target the latest runtime only.
 
@@ -74,20 +74,18 @@ Switchboard itself is not touched. Its promise is a few hundred lines and one de
 
 ### One repository
 
-Momus stays one repo with one version number. One tag publishes every NuGet package, the dotnet tool and the Docker image together, so `Momus.Client` 1.3 is known to talk to server 1.3 and the ingest contract needs no compatibility matrix. Libraries that other people's code links against are Apache 2.0; the executable, which contains the server, is proposed to be under the Functional Source License. Mixed licensing lives in one tree: a root `LICENSE` naming which directories fall under which terms, a license file inside each project, and the license expression set per package.
+Momus stays one repo with one version number. One tag publishes every NuGet package, the dotnet tool and the Docker image together, so `Momus.Client` 1.3 is known to talk to server 1.3 and the ingest contract needs no compatibility matrix. Everything in it is Apache-2.0 — the libraries, the executable that contains the server, and the image (decision D3, 2026-09-12). The Functional Source License was proposed for the executable and decided against: it permits internal use and modification, so it would not have protected Pro, and it costs adoption exactly where a new tool needs it. Pro, when it exists, lives in its own separately licensed piece rather than changing the terms of this tree.
 
 ```
 momus/
-  LICENSE                 which directory is under which terms
-  LICENSE-APACHE          full text
-  LICENSE-FSL             full text (only if D3 goes that way)
+  LICENSE                 Apache-2.0, for everything
   Directory.Build.props   one version for everything
   src/Momus.Core          Apache-2.0
   src/Momus.Postgres      Apache-2.0
   src/Momus.SqlServer     Apache-2.0
   src/Momus.Client        Apache-2.0
-  src/Momus.Server        FSL-1.1-ALv2 (proposed)
-  src/Momus.Cli           FSL-1.1-ALv2 (proposed), Dockerfile lives here
+  src/Momus.Server        Apache-2.0
+  src/Momus.Cli           Apache-2.0, Dockerfile lives here
   samples/Shop.Api        demo app with a deliberate N+1
   tests/                  unit, integration, fingerprint fixtures
   benchmarks/             client overhead, numbers printed into the README

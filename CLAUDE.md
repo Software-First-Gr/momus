@@ -67,6 +67,6 @@ docs/                 DESIGN.md, PLAN.md
 - Work on `develop`; `main` is for releases (see PLAN.md housekeeping for the pending branch decision).
 - One version for all packages in `Directory.Build.props`. CI overrides it from the tag. Do not bump it or push a `v*` tag unless a release is intended: `.github/workflows/ci.yml` publishes to nuget.org on every `v*` tag via NuGet Trusted Publishing (no key is stored; the `NUGET_USER` secret is the nuget.org owner name).
 - Package ids are claimed on nuget.org: `Momus`, `Momus.Core`, `Momus.Postgres`, `Momus.SqlServer`. 0.0.1 was published only to claim them; its listing shows placeholder text until the next release.
-- Licensing: Apache-2.0 for everything today. Planned: server + CLI binary under FSL-1.1-ALv2 once the server ships. This is decision D3 in PLAN.md and is still open.
+- Licensing: Apache-2.0 for everything, the server and the CLI binary included (decision D3, 2026-09-12). Pro (M5), when it exists, gets its own separately licensed piece; do not relicense this tree.
 - The repo is public. No announcement, launch post or Show HN until M1 runs end to end.
 - Keep the docs honest: when a task lands, tick it in PLAN.md; when a decision is made, add it to the Decisions table with the date.
