@@ -14,6 +14,9 @@ public sealed class TopQueriesCheck(int limit = 5) : IDiagnosticCheck
     public string Title => "Most expensive queries (pg_stat_statements)";
     public string Category => "queries";
 
+    /// <summary>Spare rows to fetch so that leaving out Momus's own statements still fills the limit.</summary>
+    public const int OwnStatementAllowance = 25;
+
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
         var installed = await Db.ScalarAsync(connection,
@@ -44,15 +47,21 @@ public sealed class TopQueriesCheck(int limit = 5) : IDiagnosticCheck
             FROM pg_stat_statements
             WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
             ORDER BY total_exec_time DESC
-            LIMIT {Math.Clamp(limit, 1, 500)}
+            LIMIT {Math.Clamp(limit, 1, 500) + OwnStatementAllowance}
             """, ct);
 
-        return rows.Select((row, i) =>
+        // Momus's own reads are in the view too. Fetch a few spare rows so leaving them out still
+        // returns as many statements as were asked for.
+        return rows
+            .Select(row => (Row: row, Fingerprint: SqlFingerprint.Analyze(Db.ToStr(row["full_query"]))))
+            .Where(r => !Db.IsOwn(r.Fingerprint.Key))
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select((r, i) =>
         {
+            var (row, fingerprint) = r;
             var meanMs = Db.ToDouble(row["mean_exec_time"]);
             var totalMs = Db.ToDouble(row["total_exec_time"]);
             var calls = Db.ToLong(row["calls"]);
-            var fingerprint = SqlFingerprint.Analyze(Db.ToStr(row["full_query"]));
             return new Finding
             {
                 CheckId = Id,

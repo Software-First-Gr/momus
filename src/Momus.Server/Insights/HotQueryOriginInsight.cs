@@ -43,8 +43,9 @@ public sealed class HotQueryOriginInsight : IInsight
 
     private static Insight Build(string fingerprint, DatabaseView database, int rank, QueryStatView? app)
     {
+        var span = StatementActivity.Span(database.Window);
         var cost =
-            Invariant($"The database spent {Prose.Millis(database.TotalMs)}") +
+            Invariant($"{char.ToUpperInvariant(span[0])}{span[1..]}, the database spent {Prose.Millis(database.TotalMs)}") +
             (database.Measure == "time" ? "" : $" of {database.Measure}") +
             Invariant($" on this statement across {Prose.Count(database.Calls, "call")}, {Prose.Millis(database.MeanMs)} each.");
 

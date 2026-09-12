@@ -185,6 +185,7 @@ A target is a database the scheduler scans. It arrives one of three ways: the cl
 | `scans`, `check_results`, `findings`, `finding_subjects`, `finding_state` | Today's `ScanReport`, persisted, plus per-finding lifetime | Subjects are first-class columns for joins |
 | `windows`, `query_stats`, `operation_stats`, `transaction_stats`, `pool_stats` | Ingested aggregates, one row per key per window | Rolled up to hourly rows after 24 hours |
 | `query_texts` | Fingerprint, normalized sample, native query id | One row per key per target |
+| `statement_samples` | Calls and total time per statement fingerprint, per scan | Kept three hours. The statistics views count from their last reset, so the server ranks statements on the difference from the newest scan at least an hour old |
 | `insights` | Kind, severity, title, detail, recommendation, evidence, subjects, first seen, last seen, status | Upserted by stable key so an insight has a lifetime and can be muted or marked fixed |
 
 ### Retention
@@ -217,7 +218,7 @@ public interface IInsight
 | Kind | Fires when | Joined evidence | Severity |
 | --- | --- | --- | --- |
 | `n_plus_one` | One key repeats 5 or more times inside a single operation **and** runs at least 60 times a minute — a shape and a cost, because neither alone is worth an afternoon | DB finding on the same key or on its table: seq scan, mean time, missing index | Medium alone, High if the DB side says the table is scanned or the query is slow |
-| `hot_query_origin` | A key is in the top 10 of the DB's top-queries findings by total time. The scan keeps 50 so the Queries tab can join any of them; 50 cards is a list nobody reads | Operation, call site, calls per minute from the app. If no app has sent this key, the insight says so: it comes from a job, a migration or another app | Inherits the DB finding's severity |
+| `hot_query_origin` | A key is in the top 10 of the DB's top-queries findings by total time **in the last hour** — the difference between two scans, since the statistics views count from their last reset. The scan keeps 50 so the Queries tab can join any of them; 50 cards is a list nobody reads | Operation, call site, calls per minute from the app. If no app has sent this key, the insight says so: it comes from a job, a migration or another app | Inherits the DB finding's severity |
 | `regression` | Mean time for a key under the newest app version is more than 3× the previous version's and at least 20 ms slower, with 100 or more calls on each side | Both versions' timings, the DB finding for the key, and any DB finding that appeared between the two deploys | High, Critical above 10× |
 | `transaction_held_open` | p95 open time above 500 ms and DB time inside below 30 percent of it, over at least 20 transactions | DB side: idle-in-transaction sessions, blocking chains | Medium, High when the DB side is reporting idle or blocked sessions |
 | `pool_wait` | p95 wait above 100 ms over at least 20 acquisitions | DB side: connection saturation; app side: operations with the longest open transactions | Medium, High when the DB is saturated |
@@ -300,7 +301,7 @@ Base image `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`, published framework-de
 
 - **`Finding` gains `Subjects`.** A short list of typed keys such as `query:9f3a1c77d02b4e10`, `table:public.order_lines`, `index:ix_orders_status`. The insight engine joins on these instead of parsing `Evidence`. Every existing check sets at least one.
 - **`SqlFingerprint` moves into Core.** The Postgres and SQL Server top-queries checks compute it from the statistics-view text and put it in `Subjects`.
-- **Top-queries checks return more rows to the store than to the console.** The check takes a limit; the CLI passes five, the server passes fifty.
+- **Top-queries checks return more rows to the store than to the console, and the server ranks them on the window.** The check takes a limit; the CLI passes five, the server reads five hundred, subtracts the counters of the scan an hour earlier and keeps the fifty that did the most in that hour. Both leave out Momus's own statements, recognised by fingerprint.
 - **`ScanReport` is unchanged** and gets a persister. The JSON export of the CLI stays byte-compatible so existing CI scripts keep working.
 - **`Momus.Cli` becomes a multi-command host** using the same option parsing it has now. `scan` keeps its flags and exit codes.
 

@@ -72,8 +72,14 @@ public sealed class ScanScheduler(
     {
         try
         {
-            var report = await RunWithHostFallbackAsync(target, ct);
-            var scanId = await store.SaveScanAsync(target.Id, report, ct);
+            var scanned = await RunWithHostFallbackAsync(target, ct);
+
+            // Statement counters run from the last statistics reset. Rank them on what changed
+            // since an earlier scan instead, so the database side covers the same hour as the app.
+            var baseline = await store.StatementBaselineAsync(
+                target.Id, scanned.StartedAt, Insights.InsightEngine.Window, ct);
+            var (report, samples) = StatementActivity.Apply(scanned, baseline);
+            var scanId = await store.SaveScanAsync(target.Id, report, samples, ct);
 
             var failed = report.Checks.Count(c => !c.Succeeded);
             logger.LogInformation(

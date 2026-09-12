@@ -184,7 +184,18 @@ public sealed partial class MomusStore : IAsyncDisposable
     /// known keeps its first-seen date and gets a new last-seen; a finding that stopped appearing
     /// simply stops being updated, and the UI shows how long ago that was.
     /// </summary>
-    public async Task<long> SaveScanAsync(string targetId, ScanReport report, CancellationToken ct = default)
+    public Task<long> SaveScanAsync(string targetId, ScanReport report, CancellationToken ct = default) =>
+        SaveScanAsync(targetId, report, [], ct);
+
+    /// <param name="targetId">The target the scan belongs to.</param>
+    /// <param name="report">The scan, as it should be shown.</param>
+    /// <param name="samples">
+    /// The statement counters behind it, kept so a later scan can rank on the difference
+    /// (<see cref="Momus.Server.StatementActivity"/>).
+    /// </param>
+    /// <param name="ct">Cancels the write.</param>
+    public async Task<long> SaveScanAsync(string targetId, ScanReport report,
+        IReadOnlyList<StatementSample> samples, CancellationToken ct = default)
     {
         long scanId = 0;
 
@@ -264,6 +275,8 @@ public sealed partial class MomusStore : IAsyncDisposable
                         ("$now", startedAt), ("$finding", findingId));
                 }
             }
+
+            await SaveStatementSamplesAsync(connection, tx, scanId, targetId, samples, ct);
 
             await ExecuteAsync(connection, """
                 UPDATE targets

@@ -26,6 +26,12 @@ public sealed record DatabaseView
     /// <summary>"time" or "CPU": which of the two the numbers above are.</summary>
     public required string Measure { get; init; }
 
+    /// <summary>
+    /// How far back the numbers above reach, or null when they run from the last statistics reset —
+    /// a server's first scan, or a scan stored before the server ranked on the window.
+    /// </summary>
+    public TimeSpan? Window { get; init; }
+
     public required DateTimeOffset FirstSeen { get; init; }
 }
 
@@ -128,6 +134,7 @@ public static class QueryJoin
             TotalMs = Number(root, "total_exec_ms") ?? Number(root, "total_cpu_ms") ?? 0,
             Calls = (long)(Number(root, "calls") ?? Number(root, "execution_count") ?? 0),
             Measure = cpu ? "CPU" : "time",
+            Window = Number(root, "window_seconds") is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
             FirstSeen = finding.FirstSeen,
         };
     }

@@ -43,9 +43,9 @@ else
             <div>
                 <h1>Queries</h1>
                 <p class="lede" style="margin:0">
-                    The last @($"{QueriesModel.Window.TotalMinutes:N0} min") as the app saw it,
-                    joined to the newest scan of
-                    @(Model.Selected?.Name ?? "no target") on the statement fingerprint.
+                    The last @($"{QueriesModel.Window.TotalMinutes:N0} min") on both sides: what the app
+                    asked for, beside what
+                    @(Model.Selected?.Name ?? "no target") spent on it, joined on the statement fingerprint.
                 </p>
             </div>
             <div class="grow" style="flex:1"></div>

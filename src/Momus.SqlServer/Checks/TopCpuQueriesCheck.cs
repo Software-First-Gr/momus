@@ -13,13 +13,16 @@ public sealed class TopCpuQueriesCheck(int limit = 5) : IDiagnosticCheck
     public string Title => "Most expensive queries by CPU";
     public string Category => "queries";
 
+    /// <summary>Spare rows to fetch so that leaving out Momus's own statements still fills the limit.</summary>
+    public const int OwnStatementAllowance = 25;
+
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
         // statement_text is the full slice the fingerprint is computed from; query_text is the
         // truncated copy shown to a human. Hashing the truncated text would produce a key no
         // application could ever reproduce.
         var rows = await Db.QueryAsync(connection, $"""
-            SELECT TOP {Math.Clamp(limit, 1, 500)}
+            SELECT TOP {Math.Clamp(limit, 1, 500) + OwnStatementAllowance}
                 qs.total_worker_time / 1000 AS total_cpu_ms,
                 qs.execution_count,
                 qs.total_worker_time / NULLIF(qs.execution_count, 0) / 1000.0 AS avg_cpu_ms,
@@ -36,12 +39,18 @@ public sealed class TopCpuQueriesCheck(int limit = 5) : IDiagnosticCheck
             ORDER BY qs.total_worker_time DESC
             """, ct);
 
-        return rows.Select((row, i) =>
+        // Momus's own reads are in the DMV too. Fetch a few spare rows so leaving them out still
+        // returns as many statements as were asked for.
+        return rows
+            .Select(row => (Row: row, Fingerprint: SqlFingerprint.Analyze(Db.ToStr(row["statement_text"]))))
+            .Where(r => !Db.IsOwn(r.Fingerprint.Key))
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select((r, i) =>
         {
+            var (row, fingerprint) = r;
             var avgCpuMs = Db.ToDouble(row["avg_cpu_ms"]);
             var totalCpuMs = Db.ToLong(row["total_cpu_ms"]);
             var execs = Db.ToLong(row["execution_count"]);
-            var fingerprint = SqlFingerprint.Analyze(Db.ToStr(row["statement_text"]));
             return new Finding
             {
                 CheckId = Id,

@@ -52,6 +52,7 @@ public sealed class RetentionService(MomusStore store, ILogger<RetentionService>
         var now = DateTimeOffset.UtcNow;
         var folded = await store.RollupAsync(now - MomusStore.RawRetention, ct);
         var removed = await store.TrimAsync(now - MomusStore.RollupRetention, ct);
+        await store.TrimStatementSamplesAsync(now - MomusStore.StatementSampleRetention, ct);
 
         if (folded > 0 || removed > 0)
         {

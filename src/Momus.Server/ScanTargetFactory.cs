@@ -17,11 +17,13 @@ public interface IScanTargetFactory
 public sealed class ScanTargetFactory : IScanTargetFactory
 {
     /// <summary>
-    /// The console shows five expensive queries; the store keeps fifty. A query that is #23 for
-    /// the database can still be the one an endpoint runs forty times per request, and that join
-    /// is only possible if the row was kept.
+    /// The console shows five expensive queries; the server reads five hundred and keeps fifty
+    /// (<see cref="StatementActivity.Keep"/>). Fifty, because a query that is #23 for the database
+    /// can still be the one an endpoint runs forty times per request, and that join is only
+    /// possible if the row was kept. Five hundred, because the fifty are ranked on the last hour,
+    /// and a statement below the cut-off an hour ago would otherwise count its whole lifetime.
     /// </summary>
-    public const int TopQueryLimit = 50;
+    public const int TopQueryLimit = 500;
 
     public IReadOnlyList<string> Providers { get; } = ["postgres", "sqlserver"];
 

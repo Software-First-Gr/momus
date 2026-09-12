@@ -7,7 +7,7 @@ namespace Momus.Postgres;
 
 /// <summary>PostgreSQL scan target: connects with Npgsql and runs the Postgres check suite.</summary>
 /// <param name="connectionString">Npgsql connection string. Only statistics views are read.</param>
-/// <param name="topQueryLimit">Statements to keep from pg_stat_statements: 5 for a console report, 50 for the store.</param>
+/// <param name="topQueryLimit">Statements to read from pg_stat_statements: 5 for a console report, 500 for the server.</param>
 public sealed class PostgresScanTarget(string connectionString, int topQueryLimit = 5) : IScanTarget
 {
     public string Provider => "postgres";
