@@ -35,8 +35,8 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
                 CheckId = Id,
                 Severity = idleInTx ? Severity.High : Severity.Medium,
                 Title = idleInTx
-                    ? $"Session {pid} idle in transaction for {TimeSpan.FromSeconds(secs):hh\\:mm\\:ss}"
-                    : $"Session {pid} running one query for {TimeSpan.FromSeconds(secs):hh\\:mm\\:ss}",
+                    ? $"Session {pid} idle in transaction for {Prose.Duration(TimeSpan.FromSeconds(secs))}"
+                    : $"Session {pid} running one query for {Prose.Duration(TimeSpan.FromSeconds(secs))}",
                 Detail = idleInTx
                     ? "An open transaction doing nothing holds locks and blocks vacuum from reclaiming dead tuples across the whole database."
                     : "A very long-running query may be blocking others or missing an index.",

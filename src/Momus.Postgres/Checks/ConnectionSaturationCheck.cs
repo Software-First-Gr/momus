@@ -12,7 +12,9 @@ public sealed class ConnectionSaturationCheck : IDiagnosticCheck
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
         var rows = await Db.QueryAsync(connection, """
-            SELECT (SELECT count(*) FROM pg_stat_activity) AS used,
+            -- Client backends only: pg_stat_activity also lists the checkpointer, the WAL writer,
+            -- autovacuum and I/O workers, which do not count against max_connections.
+            SELECT (SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend') AS used,
                    current_setting('max_connections')::int AS max
             """, ct);
         var used = Db.ToLong(rows[0]["used"]);

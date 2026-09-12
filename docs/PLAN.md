@@ -22,6 +22,41 @@ The design behind all of this is `docs/DESIGN.md`.
 | 2026-09-07 | **M2.1 verified, then M2.2 and M2.3 done: both halves are on one row.** The M2.1 code compiles and `dotnet test` is green, so its boxes were real. On top of it, `POST /api/v1/ingest` stores windows, and the Queries tab shows what the app asked for beside what the database made of it, joined on the fingerprint. Verified in the demo stack: `order_lines where order_id = ?` shows 371 calls/min from `GET /api/orders/{id:int}` at 8.3 ms app-side against 7.9 ms database-side, and `#1 query by total time` on the same row. 122 tests. Next: M2.4, the insight engine. |
 | 2026-09-07 | **M1.1–M1.6 done, plus the demo stack (M1.8).** `momus serve` scans on a schedule, keeps history in SQLite and shows findings with first-seen dates; `docker compose up` brings up Postgres + Momus + a flawed demo shop and the whole loop works end to end on this machine. 110 tests. Remaining for the `v0.1.0` release: run it beside a real database for a week (M1's "done when"), decide D3, and the housekeeping list. Nothing is published yet — no tag, no image pushed. |
 
+## This week — 14 to 20 September 2026
+
+From running the demo stack end to end on 2026-09-12: heavy traffic, all eight scenarios, every tab. The loop works — 237 tests green, 8 of the app's 9 statements joined, 78% with a call site, Mute and Unmute and evidence packs behave, session findings appear at five minutes and saturation clears when the flood ends. What it says would not yet be trusted on a real database, and that is the whole week. The order is deliberate: signal quality before M4, because MCP and a launch put exactly this output in front of strangers.
+
+**Mon — small, true bugs, and D3**
+
+- [x] `pg.connection_saturation` counted every row of `pg_stat_activity`, background workers included, so the demo said "Using 43 of 40 available connections". Count `backend_type = 'client backend'` only. Measured on the demo database at rest: 11 rows, 3 of them clients.
+- [x] Diagnostics printed `schema v@Model.Report.SchemaVersion` literally, because Razor reads `v@Model` as an email address. Uptime read "1 min ago".
+- [x] Prose: "across 1 calls", "0.0s across 2,910 calls", `00:05:04` in session titles. One invariant helper in Core (`Prose`) for counts, totals and durations.
+- [ ] Decide D3. Two facts carry most of it. An Apache-2.0 release cannot be taken back: `v0.1.0` under Apache is forkable forever, whatever later versions say, so the decision really is due before the tag. And FSL permits internal use and modification — it stops someone reselling Momus as a competing product, not a company deleting a Pro license check for its own use; protecting Pro needs the Pro code under separate terms either way.
+
+**Tue — both sides cover the same hour**
+
+- [ ] `pg_stat_statements` and `dm_exec_query_stats` are cumulative since the last reset; the app side is the last 60 minutes. Keep the previous snapshot per statement and rank on the delta between scans, so "#3 by total time" means this hour. On the demo, two seed INSERTs from five days earlier, one call each, were still a High and a Medium hot query, and one of them held a Fix first slot. Handle a stats reset and a statement evicted from the view (a negative delta) explicitly.
+- [ ] Momus's own statements out of the Queries tab: about 40 of its 50 rows were check SQL, extension DDL and `DISCARD ALL`. Mark the checks' queries (a leading `/* momus */` comment, for example) and exclude them; keep utility statements out of `hot_query_origin`.
+
+**Wed — ranking**
+
+- [ ] `InsightRanking.Share` gives a `server` subject the whole of the traffic and a session the 0.02 floor. Observed: a Low buffer-cache card at #2 of Fix first, and a new High idle-in-transaction at #5 below an Info hot query. A subject with no traffic of its own should be neutral, not scaled to everything or to nothing. Pin both orderings as tests, then update DESIGN.md's Ranking section.
+
+**Thu — the demo exercises all six rules**
+
+- [ ] A version knob for the shop (build argument into `InformationalVersion`) and a "slow build" switch, so `regression` can fire — then time M3's "done when" for real. Everything in the demo reports 0.0.1, so it has never been shown.
+- [ ] `idle_transaction` and `connection_flood` open raw `NpgsqlConnection`s, which `Momus.Client` cannot see, so `transaction_held_open` and `pool_wait` never fire in the demo. Add EF Core variants.
+
+**Fri — start M1's week**
+
+- [ ] Point `momus serve` at one of the author's own databases, with `pg_monitor`, and leave it running. That starts M1's "done when", which is the gate for `v0.1.0` (D18).
+
+**Weekend, optional**
+
+- [ ] The half-day spike on a data-access hook below EF Core (Open questions). The demo shows the gap plainly: the idle-transaction scenario's `insert into audit_log` is "not seen from any app".
+
+**Deferred by the author:** CI's `image` job fails on every push to `main` — `docker/metadata-action` emits no tag there (`edge` is develop-only, semver is tag-only) and buildx will not push an untagged image. Not needed yet.
+
 ## Decisions
 
 | Id | Date | Decision |
@@ -43,6 +78,7 @@ The design behind all of this is `docs/DESIGN.md`.
 | D15 | 2026-09-07 | **`n_plus_one` fires at ×5 and 60 calls a minute, not at ×10.** DESIGN.md's first rule was "more than 10 times inside a single operation", and the demo — built to trigger exactly this — repeats **six** times, because an order has about six lines. Rather than tune the number until the demo lit up, the rule was made the shape it actually is: an N+1 is a loop **and** a cost, and neither half alone is worth an afternoon. Five repeats of one statement inside one operation is a loop, not a hand-written sequence of related reads; 60 executions a minute is the floor below which a tight loop is nobody's problem. Both numbers are constants on `NPlusOneInsight`, so the next revision is one edit and a test. DESIGN.md updated to match. |
 | D16 | 2026-09-07 | **The call site has to be captured before the statement runs, not after.** `Momus.Client` walked the stack from the *executed* interceptor callbacks, and in an async application that returns nothing at all: measured on EF Core 10 over Npgsql, the physical stack there is `RelationalCommand.MoveNext` over `AsyncStateMachineBox` over `ExecutionContext.RunInternal`, and every application frame is a logical continuation that no longer exists. So *every* call site was null — silently, because a missing call site looks like a call site the walker could not name. The fix is six `*Executing` overrides that record nothing and exist only to warm the `(fingerprint, operation)` cache while the caller is still on the stack, about a dozen frames up. This was found by reading the Queries tab and then dumping raw frames into the store, not by a test — and it is the one thing D6 ranks above everything else, so `Momus.Client.Tests` (M2.1) must assert a real call site, not just that an interceptor fired. |
 | D17 | 2026-09-07 | **`Timing` is twelve log2 buckets, not eight.** Eight stops at 64 ms, which is a fine range for a statement and a useless one for the two things M3 measures: a transaction held open and a wait for a connection are interesting at hundreds of milliseconds. With eight buckets a p95 could never exceed 128, so `transaction_held_open` (500 ms) and `pool_wait` (100 ms) could not have fired at all — found by the first test written for them, not by reading the code. Twelve reaches a second, and the last bucket now reports the largest value actually seen rather than pretending everything above the top is exactly the top. A wire change, which is free until 1.0 freezes the contract and would have been expensive after. |
+| D18 | 2026-09-12 | **The first real release is `v0.1.0`, and it carries everything built through M3.** `v0.2.0` and `v0.3.0` were milestone labels that were never tagged; numbering the first publish after the third milestone would advertise two versions nobody can install. The M2.5 and M3 tag tasks fold into M1.7. The gates do not move: D3 decided, and M1's week beside a real database served. |
 
 ## Open questions
 
@@ -147,7 +183,7 @@ dates and staleness all need a database under real, changing load.
       PHP app as against a modern .NET one. True today, costs a paragraph, and it is the cheapest
       probe for whether legacy shops are an audience (M6).
 - [ ] Decide D3 and set the license expression for the `Momus` tool accordingly.
-- [ ] Tag `v0.1.0`. Verify packages and image.
+- [ ] Tag `v0.1.0` — the first real release, carrying M1 through M3 (D18). Verify packages and image.
 
 ---
 
@@ -227,7 +263,7 @@ JSON but does not say where the types live; this is that decision.
 
 ### M2.5 Release
 
-- [ ] Tag `v0.2.0`. `Momus.Client` appears on nuget.org for the first time.
+- [ ] ~~Tag `v0.2.0`.~~ Folded into M1.7's `v0.1.0` by D18; `Momus.Client` appears on nuget.org for the first time there.
 
 ---
 
@@ -248,7 +284,7 @@ JSON but does not say where the types live; this is that decision.
   - Both bugs here were found by clicking the buttons on the running server rather than by a test. Muting filtered the insight out of *every* read, including the page carrying the Unmute button, so it was a one-way door. And "marked fixed, came back" was indistinguishable from "never went away" one tick later, because reopening is immediate — there is a `reopened` flag and a pill for it now.
 - [x] History tab: findings per scan over a week as one inline SVG, with every deploy drawn as a vertical line. One chart, because the only question worth a chart is "did this start when we shipped something".
 - [x] Retention job: nightly `VACUUM` beside the ten-minute trim. SQLite reuses freed pages but never returns them, so without it the file keeps the high-water mark of the busiest week it ever had.
-- [ ] Tag `v0.3.0`. **Not done, deliberately.** A `v*` tag publishes every package to nuget.org and the image to GHCR; `v0.1.0` and `v0.2.0` never happened, D3 is still open, and M1's "done when" — a week beside a real database — has not been served. Releasing is a decision about the product, not the last task of a milestone.
+- [ ] ~~Tag `v0.3.0`.~~ Folded into M1.7's `v0.1.0` by D18. **Not done, deliberately.** A `v*` tag publishes every package to nuget.org and the image to GHCR; `v0.1.0` and `v0.2.0` never happened, D3 is still open, and M1's "done when" — a week beside a real database — has not been served. Releasing is a decision about the product, not the last task of a milestone.
 
 ---
 

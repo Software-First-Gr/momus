@@ -46,7 +46,7 @@ public sealed class TopCpuQueriesCheck(int limit = 5) : IDiagnosticCheck
             {
                 CheckId = Id,
                 Severity = avgCpuMs > 1000 ? Severity.High : avgCpuMs > 250 ? Severity.Medium : Severity.Info,
-                Title = $"#{i + 1} query by CPU: {totalCpuMs / 1000.0:N1}s across {execs:N0} executions",
+                Title = $"#{i + 1} query by CPU: {Prose.Millis(totalCpuMs)} across {Prose.Count(execs, "execution")}",
                 Detail = $"Average CPU {avgCpuMs:N1} ms per execution, {Db.ToLong(row["total_logical_reads"]):N0} " +
                          "total logical reads. Query text (truncated) is in the evidence.",
                 Recommendation = avgCpuMs > 250

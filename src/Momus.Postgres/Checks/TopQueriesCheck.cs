@@ -57,7 +57,7 @@ public sealed class TopQueriesCheck(int limit = 5) : IDiagnosticCheck
             {
                 CheckId = Id,
                 Severity = PostgresThresholds.MeanQueryTimeSeverity(meanMs),
-                Title = $"#{i + 1} query by total time: {totalMs / 1000:N1}s across {calls:N0} calls",
+                Title = $"#{i + 1} query by total time: {Prose.Millis(totalMs)} across {Prose.Count(calls, "call")}",
                 Detail = $"Mean execution time {meanMs:N1} ms. Query text (truncated) is in the evidence.",
                 Recommendation = meanMs > 250
                     ? "Run EXPLAIN (ANALYZE, BUFFERS) on this query; it is slow per-call, not just frequent."
