@@ -25,11 +25,14 @@ public sealed class PoolWaitInsight : IInsight
             .OrderByDescending(f => (int)f.Severity)
             .FirstOrDefault();
 
-        // The app-side cause, if there is one: whoever is holding connections longest.
+        // The app-side cause, if there is one: whoever is holding connections longest. Transactions
+        // come one row per operation and call site, so an operation that opens them in two places
+        // was named twice ("POST /checkout and POST /checkout") until they were added up.
         var holding = context.Transactions
-            .OrderByDescending(t => t.OpenMs.Sum)
+            .GroupBy(t => t.Operation)
+            .OrderByDescending(g => g.Sum(t => t.OpenMs.Sum))
             .Take(2)
-            .Select(t => t.Operation)
+            .Select(g => g.Key)
             .ToList();
 
         var insights = context.PoolWaits

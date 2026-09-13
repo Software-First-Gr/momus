@@ -167,10 +167,16 @@ public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
     }
 
     /// <summary>
-    /// Approximate percentile from the buckets, as the upper bound of the bucket it lands in. The
-    /// last bucket has no upper bound, so the largest value actually seen stands in for one —
-    /// otherwise everything past a second would report as exactly a second.
+    /// Approximate percentile from the buckets: interpolated within the bucket it lands in, and
+    /// never more than the largest value actually seen. The last bucket has no upper bound, so that
+    /// largest value is its upper bound — otherwise everything past a second would read as a second.
     /// </summary>
+    /// <remarks>
+    /// It used to report the bucket's upper edge. On the demo a checkout that held its transaction
+    /// for 700 ms therefore read "holds a transaction open for 1,024 ms", a number nothing had
+    /// measured — and 1,024 is exactly the kind of round figure that makes a reader stop trusting
+    /// the rest of the card.
+    /// </remarks>
     public double Percentile(double fraction)
     {
         var total = Hist.Sum();
@@ -180,11 +186,16 @@ public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
         long seen = 0;
         for (var i = 0; i < Hist.Count; i++)
         {
+            if (Hist[i] == 0) continue;
+
+            var before = seen;
             seen += Hist[i];
             if (seen < target) continue;
 
-            if (i == 0) return 1;
-            return i >= Buckets - 1 && Max > 0 ? Max : Math.Pow(2, i);
+            var lower = i == 0 ? 0 : Math.Pow(2, i - 1);
+            var upper = i >= Buckets - 1 ? Math.Max(lower, Max) : Math.Pow(2, i);
+            var value = lower + (upper - lower) * ((target - before) / Hist[i]);
+            return Max > 0 ? Math.Min(value, Max) : value;
         }
         return Max;
     }

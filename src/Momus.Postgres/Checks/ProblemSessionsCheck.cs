@@ -15,7 +15,7 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
             SELECT pid, state, usename, application_name,
                    extract(epoch FROM now() - state_change)::bigint AS in_state_secs,
                    extract(epoch FROM now() - query_start)::bigint AS running_secs,
-                   left(query, 300) AS query
+                   left(query, 300) AS query, query AS full_query
             FROM pg_stat_activity
             WHERE pid <> pg_backend_pid()
               AND ((state = 'idle in transaction' AND now() - state_change > interval '5 minutes')
@@ -52,6 +52,9 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
                     ["application_name"] = Db.ToStr(row["application_name"]),
                     ["seconds"] = secs,
                     ["query"] = Db.ToStr(row["query"]),
+                    // The session's last statement, keyed the way the app side keys it, so an insight
+                    // can tell whether this session belongs to the transaction it is talking about.
+                    ["query_fingerprint"] = SqlFingerprint.Compute(Db.ToStr(row.GetValueOrDefault("full_query"))),
                 },
             };
         }).ToList();

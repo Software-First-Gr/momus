@@ -44,4 +44,18 @@ public static class PostgresThresholds
         > 250 => Severity.Medium,
         _ => Severity.Info,
     };
+
+    /// <summary>
+    /// Waits shorter than this are ordinary contention, and too brief for a scan every half minute
+    /// to catch reliably anyway.
+    /// </summary>
+    public const int LockWaitMinSeconds = 5;
+
+    /// <summary>A minute blocked is a request that has already timed out somewhere upstream.</summary>
+    public static Severity? LockWaitSeverity(long seconds) => seconds switch
+    {
+        >= 60 => Severity.High,
+        >= LockWaitMinSeconds => Severity.Medium,
+        _ => null,
+    };
 }

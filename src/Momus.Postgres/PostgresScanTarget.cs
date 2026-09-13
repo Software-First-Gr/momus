@@ -22,6 +22,8 @@ public sealed class PostgresScanTarget(string connectionString, int topQueryLimi
         new UnusedIndexesCheck(),
         new DeadTuplesCheck(),
         new ProblemSessionsCheck(),
+        new LockWaitsCheck(),
+        // Last, so every other check's SQL is already known to be Momus's own (Db.IsOwn).
         new TopQueriesCheck(topQueryLimit),
     ];
 

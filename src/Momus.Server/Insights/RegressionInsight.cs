@@ -27,17 +27,21 @@ public sealed class RegressionInsight : IInsight
     /// <summary>Past this, it is not a regression, it is an outage in slow motion.</summary>
     public const double CriticalRatio = 10;
 
+    /// <summary>
+    /// A version that has not reported for this long has stopped running. Plenty of a client's
+    /// five-second windows, and short enough that a rollback clears the card within minutes.
+    /// </summary>
+    public static readonly TimeSpan RunningGrace = TimeSpan.FromMinutes(2);
+
     public string Kind => "regression";
 
     public Task<IReadOnlyList<Insight>> EvaluateAsync(IInsightContext context, CancellationToken ct)
     {
         var insights = new List<Insight>();
 
-        // The two newest versions by the day they first appeared, which is what a deploy is.
-        if (context.Deploys.Count >= 2)
+        if (Compared(context.Deploys) is { } pair)
         {
-            var newest = context.Deploys[^1];
-            var previous = context.Deploys[^2];
+            var (newest, previous) = pair;
             var database = QueryJoin.FromFindings(context.LatestFindings);
 
             var before = context.VersionStats.Where(v => v.Version == previous.Version)
@@ -61,14 +65,44 @@ public sealed class RegressionInsight : IInsight
         return Task.FromResult<IReadOnlyList<Insight>>(insights);
     }
 
+    /// <summary>
+    /// The deploy to judge, and the one to judge it against — or null with fewer than two versions.
+    /// </summary>
+    /// <remarks>
+    /// The one judged is the most recently deployed version that is <em>still running</em>, not
+    /// simply the last to appear. After a rollback the last to appear is the version that was taken
+    /// away, and a card saying "got slower in 1.1.0" while 1.0.0 serves every request is wrong in
+    /// the way that costs the most trust. During a rolling deploy both are running, and the new one
+    /// is judged. It is compared against whichever other version ran most recently.
+    /// </remarks>
+    public static (DeployView Newest, DeployView Previous)? Compared(IReadOnlyList<DeployView> deploys)
+    {
+        if (deploys.Count < 2) return null;
+
+        var lastReport = deploys.Max(d => d.LastSeen);
+        var newest = deploys
+            .Where(d => d.LastSeen >= lastReport - RunningGrace)
+            .MaxBy(d => d.FirstSeen)!;
+        var previous = deploys
+            .Where(d => d.Version != newest.Version)
+            .OrderByDescending(d => d.LastSeen)
+            .ThenByDescending(d => d.FirstSeen)
+            .First();
+
+        return (newest, previous);
+    }
+
     private static Insight Build(
         VersionStatView after, VersionStatView before, DeployView newest, DeployView previous,
         double ratio, double delta, DatabaseView? database, IInsightContext context)
     {
         // Anything the database started complaining about between the two deploys is a candidate
-        // explanation, and it is the sort of thing nobody thinks to look for by hand.
+        // explanation, and it is the sort of thing nobody thinks to look for by hand. Not statements
+        // — they enter and leave the hourly ranking all the time — and not Info, which explains
+        // nothing: on the demo both put "0.1 ms across 2 calls" in this list.
         var since = context.LatestFindings
             .Where(f => f.FirstSeen >= previous.FirstSeen && f.FirstSeen <= newest.FirstSeen)
+            .Where(f => f.Severity > Severity.Info && !f.Subjects.Any(s => s.Kind == Subject.Query))
             .OrderByDescending(f => (int)f.Severity)
             .Take(3)
             .Select(f => f.Title)

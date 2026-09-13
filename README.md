@@ -198,7 +198,7 @@ Exit codes: `0` clean scan · `3` High/Critical findings (CI-friendly) · `1` sc
 
 **PostgreSQL** — buffer cache hit ratio, connection saturation, tables dominated by
 sequential scans, unused indexes, dead-tuple/vacuum debt, idle-in-transaction and
-long-running sessions, top queries by cumulative cost (via `pg_stat_statements`,
+long-running sessions, sessions blocked on a lock and the session holding it, top queries by cumulative cost (via `pg_stat_statements`,
 degrades gracefully when absent).
 
 **SQL Server** — dominant wait types (benign waits filtered, known causes annotated),

@@ -21,7 +21,7 @@ public class SubjectTests
         Assert.NotEmpty(findings);
         Assert.All(findings, f => Assert.NotEmpty(f.Subjects));
         // Fixtures are meant to exercise every check, not just the easy ones.
-        Assert.Equal(7, findings.Select(f => f.CheckId).Distinct().Count());
+        Assert.Equal(8, findings.Select(f => f.CheckId).Distinct().Count());
     }
 
     [Fact]
@@ -119,6 +119,12 @@ public class SubjectTests
             ("full_query", "SELECT o.id FROM orders o WHERE o.customer_id = $1 AND o.status = $2"),
             ("query", "SELECT o.id FROM orders o WHERE o.customer_id = $1 AND o.status = $2"),
             ("calls", 48_000L), ("total_exec_time", 91_000.0), ("mean_exec_time", 1.9), ("rows", 192_000L)))
+        .When("wait_event_type = 'Lock'", Row(
+            ("pid", 51L), ("usename", "app"), ("application_name", "Shop.Api"), ("wait_event", "transactionid"),
+            ("waiting_secs", 42L), ("query", "UPDATE carts SET total = $1 WHERE id = $2"),
+            ("full_query", "UPDATE carts SET total = $1 WHERE id = $2"), ("blocker_count", 1L),
+            ("blocker_pid", 4412L), ("blocker_state", "idle in transaction"), ("blocker_state_secs", 900L),
+            ("blocker_query", "SELECT 1"), ("blocker_full_query", "SELECT 1")))
         .When("pg_stat_activity", Row(
             ("pid", 4412L), ("state", "idle in transaction"), ("usename", "app"),
             ("application_name", "Shop.Api"), ("in_state_secs", 900L), ("running_secs", 900L),

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Momus.Core;
 using Momus.Core.Insights;
 using static System.FormattableString;
@@ -20,37 +21,63 @@ public sealed class TransactionHeldOpenInsight : IInsight
     /// <summary>A handful of samples cannot support a percentile.</summary>
     public const long MinCount = 20;
 
+    /// <summary>Where session findings record the statements that tie them to an application.</summary>
+    private static readonly string[] FingerprintKeys = ["query_fingerprint", "blocker_query_fingerprint"];
+
     public string Kind => "transaction_held_open";
 
     public Task<IReadOnlyList<Insight>> EvaluateAsync(IInsightContext context, CancellationToken ct)
     {
-        // The database's side of the same story: sessions sitting idle in a transaction, and
-        // whatever is blocked behind them.
-        var symptoms = context.LatestFindings
-            .Where(f => f.CheckId.Contains("idle", StringComparison.OrdinalIgnoreCase) ||
-                        f.CheckId.Contains("blocking", StringComparison.OrdinalIgnoreCase) ||
-                        f.CheckId.Contains("problem_sessions", StringComparison.OrdinalIgnoreCase))
+        // The database's side of the same story: sessions idle in a transaction, or waiting on a
+        // lock somebody else holds.
+        var sessions = context.LatestFindings
+            .Where(f => f.Subjects.Any(s => s.Kind == Subject.Session))
             .OrderByDescending(f => (int)f.Severity)
             .ToList();
 
         var insights = context.Transactions
             .Where(t => t.Count >= MinCount && t.P95OpenMs > MinP95OpenMs && t.DbShare < MaxDbShare)
             .OrderByDescending(t => t.P95OpenMs)
-            .Select(t => Build(t, symptoms))
+            .Select(t => Build(t, Related(t, sessions, context)))
             .ToList();
 
         return Task.FromResult<IReadOnlyList<Insight>>(insights);
     }
 
-    private static Insight Build(TransactionStatView transaction, IReadOnlyList<FindingView> symptoms)
+    /// <summary>
+    /// The worst session finding that is provably about this operation's transactions, if any.
+    /// </summary>
+    /// <remarks>
+    /// Found on the demo: a checkout holding its transaction for 700 ms went to High because a
+    /// different scenario had left an unrelated session idle in transaction for five minutes, and
+    /// the card said "the database side agrees" about something the database was not saying. The
+    /// join is the one the rest of Momus is built on: a session counts when the statement it last
+    /// ran — or, for a session blocked on a lock, the statement its blocker last ran — is one this
+    /// operation runs. SQL Server's blocking check does not record fingerprints yet, so it never
+    /// counts rather than always counting.
+    /// </remarks>
+    private static FindingView? Related(
+        TransactionStatView transaction, IReadOnlyList<FindingView> sessions, IInsightContext context)
     {
-        var worst = symptoms.FirstOrDefault();
+        if (sessions.Count == 0) return null;
+
+        var statements = context.QueryStats
+            .Where(q => q.Operation == transaction.Operation)
+            .Select(q => q.Fingerprint)
+            .ToHashSet(StringComparer.Ordinal);
+        if (statements.Count == 0) return null;
+
+        return sessions.FirstOrDefault(f => Fingerprints(f).Any(statements.Contains));
+    }
+
+    private static Insight Build(TransactionStatView transaction, FindingView? related)
+    {
         var where = transaction.CallSite is { Length: > 0 } site ? $" ({site})" : "";
 
         return new Insight
         {
             Kind = "transaction_held_open",
-            Severity = worst is not null && worst.Severity >= Severity.Medium
+            Severity = related is not null && related.Severity >= Severity.Medium
                 ? Severity.High
                 : Severity.Medium,
             Title = Invariant($"{transaction.Operation} holds a transaction open for {transaction.P95OpenMs:N0} ms"),
@@ -58,7 +85,7 @@ public sealed class TransactionHeldOpenInsight : IInsight
                 Invariant($"p95 open time {transaction.P95OpenMs:N0} ms across {transaction.Count:N0} ") +
                 Invariant($"transactions, of which only {Share(transaction.DbShare)} was spent talking to ") +
                 Invariant($"the database.{where} The rest is locks held while something else happens.") +
-                (worst is not null ? $" The database side agrees: {worst.Title}" : ""),
+                (related is not null ? $" The database side agrees: {related.Title}" : ""),
             Recommendation =
                 "Move whatever is not database work — an HTTP call, a file write, a slow " +
                 "computation — outside the transaction, or commit before doing it.",
@@ -73,9 +100,31 @@ public sealed class TransactionHeldOpenInsight : IInsight
                 ["p95_open_ms"] = Math.Round(transaction.P95OpenMs, 1),
                 ["mean_open_ms"] = Math.Round(transaction.MeanOpenMs, 1),
                 ["db_share"] = Math.Round(transaction.DbShare, 3),
-                ["database_says"] = worst?.Title,
+                ["database_says"] = related?.Title,
             },
         };
+    }
+
+    private static IReadOnlyList<string> Fingerprints(FindingView finding)
+    {
+        try
+        {
+            using var evidence = JsonDocument.Parse(finding.EvidenceJson);
+            if (evidence.RootElement.ValueKind != JsonValueKind.Object) return [];
+
+            return FingerprintKeys
+                .Select(key => evidence.RootElement.TryGetProperty(key, out var value) &&
+                               value.ValueKind == JsonValueKind.String
+                    ? value.GetString()
+                    : null)
+                .OfType<string>()
+                .Where(key => key.Length > 0)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private static string Share(double fraction) => Invariant($"{fraction * 100:N0}%");
