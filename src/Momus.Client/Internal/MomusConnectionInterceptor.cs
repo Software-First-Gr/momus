@@ -24,7 +24,16 @@ internal sealed class MomusConnectionInterceptor(MomusOptions options) : DbConne
         return Task.CompletedTask;
     }
 
-    private void Record(ConnectionEndEventData data) =>
-        OperationContext.Current?.RecordPoolWait(
-            data.Duration.TotalMilliseconds, options.MaxKeysPerOperation);
+    private void Record(ConnectionEndEventData data)
+    {
+        try
+        {
+            OperationContext.Current?.RecordPoolWait(data.Duration.TotalMilliseconds, options.MaxKeysPerOperation);
+        }
+        catch (Exception)
+        {
+            // An exception here would fail the application's Open.
+            MomusRuntime.Fault();
+        }
+    }
 }

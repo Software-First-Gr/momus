@@ -37,6 +37,7 @@
     <ProjectReference Include="..\..\src\Momus.Postgres\Momus.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Momus.SqlServer\Momus.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Momus.Server\Momus.Server.csproj" />
+    <ProjectReference Include="..\..\src\Momus.Cli\Momus.Cli.csproj" />
   </ItemGroup>
 
 </Project>

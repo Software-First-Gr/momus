@@ -27,6 +27,7 @@ internal sealed class MomusExporter(
     private Window _window = new(options.MaxKeysPerWindow);
     private bool _serverIsDown;
     private bool _saidHello;
+    private bool _keyRefused;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -76,6 +77,13 @@ internal sealed class MomusExporter(
 
     private async Task FlushAsync(CancellationToken ct)
     {
+        if (MomusRuntime.TakeFaults() is var faults and > 0)
+        {
+            logger.LogWarning(
+                "Momus.Client caught {Count} errors of its own and skipped those statements. The application's " +
+                "queries were not affected. This is a bug in Momus; please report it.", faults);
+        }
+
         Window window;
         lock (_gate)
         {
@@ -100,7 +108,24 @@ internal sealed class MomusExporter(
         {
             var client = clients.CreateClient(HttpClientName);
             using var response = await client.PostAsJsonAsync("api/v1/ingest", batch, IngestJson.Options, ct);
+
+            // A refused key is not a server that is down, and saying so would send someone to
+            // check the wrong thing.
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                if (!_keyRefused)
+                {
+                    logger.LogWarning(
+                        "Momus server at {Endpoint} refused this application's ingest key; dropping windows until " +
+                        "Momus:IngestKey matches the server's MOMUS_INGEST_KEY{Missing}.",
+                        options.Endpoint, options.IngestKey is { Length: > 0 } ? "" : " (none is set here)");
+                    _keyRefused = true;
+                }
+                return;
+            }
+
             response.EnsureSuccessStatusCode();
+            _keyRefused = false;
 
             if (_serverIsDown)
             {

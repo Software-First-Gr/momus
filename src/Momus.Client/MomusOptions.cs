@@ -25,6 +25,12 @@ public sealed class MomusOptions
     /// </summary>
     public bool? ShareConnectionStrings { get; set; }
 
+    /// <summary>
+    /// Sent with every window when set; a server started with <c>MOMUS_INGEST_KEY</c> refuses
+    /// windows without it. Needed once the server is somewhere other than this machine.
+    /// </summary>
+    public string? IngestKey { get; set; }
+
     /// <summary>How often a window is closed and sent. Frequent enough to feel live, rare enough to be nothing.</summary>
     public double FlushSeconds { get; set; } = 5;
 

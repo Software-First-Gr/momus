@@ -21,10 +21,22 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     private readonly long _startedAt = Stopwatch.GetTimestamp();
     private OperationContext? _previous;
     private string? _name;
+    private volatile bool _ended;
 
+    /// <summary>
+    /// The innermost operation still in progress. An operation that has ended is skipped: work a
+    /// request started and left running — a fire-and-forget task, a SignalR connection begun in an
+    /// earlier request — still carries it in its execution context, and a statement recorded into
+    /// an operation already reported is a statement nobody will ever see.
+    /// </summary>
     public static OperationContext? Current
     {
-        get => Ambient.Value;
+        get
+        {
+            var context = Ambient.Value;
+            while (context is { _ended: true }) context = context._previous;
+            return context;
+        }
         private set => Ambient.Value = value;
     }
 
@@ -45,9 +57,17 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     /// Restores whatever was in scope before, rather than clearing it: a named background block
     /// inside a request must not leave the rest of that request unattributed.
     /// </summary>
+    /// <remarks>
+    /// The name is settled here, while the request is still alive. It used to be worked out on
+    /// first use, and a statement that outlived its request asked for it after ASP.NET Core had
+    /// disposed the <c>HttpContext</c> — which threw into EF Core and failed the application's own
+    /// query.
+    /// </remarks>
     public static void End(OperationContext context)
     {
-        if (ReferenceEquals(Current, context)) Current = context._previous;
+        _ = context.Name;
+        context._ended = true;
+        if (ReferenceEquals(Ambient.Value, context)) Ambient.Value = context._previous;
     }
 
     /// <summary>
@@ -63,20 +83,34 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
 
         if (http is not null)
         {
-            var endpoint = http.Features.Get<IEndpointFeature>()?.Endpoint;
-            if (endpoint is RouteEndpoint route)
+            try
             {
-                return $"{http.Request.Method} /{route.RoutePattern.RawText?.TrimStart('/')}";
+                return ResolveHttp(http);
             }
-            if (endpoint?.DisplayName is { Length: > 0 } display) return display;
-
-            // No endpoint: middleware ran a query before routing, or nothing matched.
-            return $"{http.Request.Method} {http.Request.Path}";
+            catch (ObjectDisposedException)
+            {
+                // Not reachable through End, which settles the name first; kept so a future caller
+                // that asks too late gets a vague name rather than a failed query.
+                return $"{Kind} (after the request ended)";
+            }
         }
 
         return Activity.Current?.DisplayName is { Length: > 0 } activity
             ? activity
             : Momus.Core.Ingest.IngestOperation.AmbientName;
+    }
+
+    private static string ResolveHttp(HttpContext http)
+    {
+        var endpoint = http.Features.Get<IEndpointFeature>()?.Endpoint;
+        if (endpoint is RouteEndpoint route)
+        {
+            return $"{http.Request.Method} /{route.RoutePattern.RawText?.TrimStart('/')}";
+        }
+        if (endpoint?.DisplayName is { Length: > 0 } display) return display;
+
+        // No endpoint: middleware ran a query before routing, or nothing matched.
+        return $"{http.Request.Method} {http.Request.Path}";
     }
 
     /// <summary>Records one statement execution against this operation.</summary>

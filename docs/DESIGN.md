@@ -289,6 +289,8 @@ Also published as a dotnet global tool: `dotnet tool install -g Momus`.
 | `MOMUS_DATA` | `/data` | One volume to mount |
 | `MOMUS_SCAN_INTERVAL` | `60s` | Statistics views are cheap to read; a minute keeps sparklines useful |
 | `MOMUS_TARGETS__0__*` | none | For servers that get no client, such as a staging DB |
+| `MOMUS_INGEST_PORT` | none | A second port serving only ingest and `/healthz`, so an app elsewhere can report while the pages stay on loopback |
+| `MOMUS_INGEST_KEY` | none | Windows need the same value in `Momus:IngestKey` (header `X-Momus-Key`); environment only, never a flag |
 | `MOMUS_LICENSE` | none | Pro key, validated offline |
 
 ```

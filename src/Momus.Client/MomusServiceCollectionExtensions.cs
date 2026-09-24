@@ -78,6 +78,10 @@ public static class MomusServiceCollectionExtensions
             client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/') + "/");
             // The exporter is a background service; a slow server can only ever delay itself.
             client.Timeout = TimeSpan.FromSeconds(10);
+            if (options.IngestKey is { Length: > 0 } key)
+            {
+                client.DefaultRequestHeaders.Add(Core.Ingest.IngestJson.KeyHeader, key.Trim());
+            }
         });
 
         services.AddHostedService<MomusExporter>();

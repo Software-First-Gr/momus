@@ -18,5 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Momus.Core\Momus.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Momus.Tests" />
+  </ItemGroup>
 
 </Project>

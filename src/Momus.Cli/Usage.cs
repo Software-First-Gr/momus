@@ -26,10 +26,16 @@ public static class Usage
                   --target <provider>:<connection string>   May be repeated. Also name=provider:...
                   --data <dir>            Where the SQLite file lives     (MOMUS_DATA)
                   --port <n>              HTTP port, default 4848         (MOMUS_PORT)
+                  --ingest-port <n>       A second port serving only the ingest endpoint and
+                                          /healthz, for applications on other machines
+                                                                          (MOMUS_INGEST_PORT)
                   --scan-interval <90s>   Default 60s                     (MOMUS_SCAN_INTERVAL)
 
               Targets can also come from the environment, which is what the Docker image uses:
                   MOMUS_TARGETS__0__NAME, __PROVIDER, __CONNECTIONSTRING
+
+              MOMUS_INGEST_KEY makes the ingest endpoint require the same value in the
+              application's Momus:IngestKey. Environment only, so it never shows up in ps.
 
             Momus only ever reads the engine's own statistics views. A read-only user is enough.
             """);

@@ -5,7 +5,7 @@ using Momus.Server.Store;
 namespace Momus.Server.Diagnostics;
 
 /// <summary>Reads the store and turns it into the verdicts on the diagnostics page.</summary>
-public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
+public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options, IngestGate? gate = null)
 {
     /// <summary>
     /// The process's own start, not this type's: a static initialised on first use runs when the
@@ -98,7 +98,7 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
     /// The verdicts, in the order someone would work through them: can it see a database, can it
     /// hear an application, and do the two halves actually meet.
     /// </summary>
-    private static IReadOnlyList<Check> Judge(DiagnosticsReport report, DateTimeOffset now)
+    private IReadOnlyList<Check> Judge(DiagnosticsReport report, DateTimeOffset now)
     {
         var checks = new List<Check>();
 
@@ -158,6 +158,24 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options)
         }
 
         // ---- the application half
+        // Refusals first: an application whose key is wrong looks, on every other line here,
+        // exactly like one that is not running.
+        if (gate?.Refusals is { Count: > 0 } refused)
+        {
+            checks.Add(new Check(Verdict.Problem,
+                $"{refused.Count:N0} window(s) refused since the server started for a missing or wrong ingest key, " +
+                $"the last from {refused.LastFrom ?? "an unknown address"} {Humanize(now - (refused.LastAt ?? now))} ago.",
+                "The application's Momus:IngestKey must be the value of MOMUS_INGEST_KEY here. Until it is, " +
+                "nothing that application runs is counted."));
+        }
+
+        if (options.IngestPort is { } ingestPort && string.IsNullOrEmpty(options.IngestKey))
+        {
+            checks.Add(new Check(Verdict.Warning,
+                $"Port {ingestPort} accepts windows from anything that can reach it.",
+                "Set MOMUS_INGEST_KEY here, and the same value as Momus:IngestKey in the application."));
+        }
+
         if (report.Apps.Count == 0)
         {
             checks.Add(new Check(Verdict.Warning, "No application has ever reported.",

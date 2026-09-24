@@ -141,11 +141,13 @@ public class SubjectTests
         .When("dm_exec_query_stats", Row(
             ("total_cpu_ms", 78_000L), ("execution_count", 120L), ("avg_cpu_ms", 650.0),
             ("total_logical_reads", 9_100_000L), ("query_hash", "0x8F3A1C77D02B4E10"),
+            ("database_name", "shop"),
             ("statement_text", "SELECT * FROM [Products] WHERE LOWER([Name]) LIKE @p0"),
             ("query_text", "SELECT * FROM [Products] WHERE LOWER([Name]) LIKE @p0")))
         .When("dm_exec_requests", Row(
             ("session_id", 61L), ("blocking_session_id", 54L), ("wait_type", "LCK_M_X"),
-            ("wait_time", 42_000L), ("query_text", "UPDATE Carts SET Total = @p0 WHERE Id = @p1")))
+            ("wait_time", 42_000L), ("database_name", "shop"),
+            ("query_text", "UPDATE Carts SET Total = @p0 WHERE Id = @p1")))
         .When("dm_os_performance_counters", Row(("ple", 180L)));
 
     private static Dictionary<string, object?> Row(params (string Name, object? Value)[] cells)

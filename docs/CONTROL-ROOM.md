@@ -198,7 +198,8 @@ could not have shown the problem.
    would belong to another database. Filter top-CPU on the plan's `dbid` attribute
    (`sys.dm_exec_plan_attributes`) and blocking on `r.database_id`, both against `DB_ID()`. Waits and
    page life expectancy describe the instance by nature and should say so. Check the Postgres side
-   for the same assumption.
+   for the same assumption. **Fixed (D24)**, Postgres's session and lock-wait checks included, each
+   proven by a live test that fails without it.
 2. **Long-lived requests.** `MomusMiddleware` opens one operation per request and completes it when
    the request ends. A Blazor Server circuit is one WebSocket request for as long as the tab is open,
    so every statement the UI runs is expected to land in one operation per circuit: reported only
@@ -208,11 +209,18 @@ could not have shown the problem.
    event requests and let those statements fall through to the ambient path, which names them from
    `Activity.Current` — a mediator's `Send <Request>` span or a job's root span when the application
    has them. The Switchboard adapter is the complete answer. The same applies to SignalR and gRPC
-   streaming anywhere.
+   streaming anywhere. **Fixed (D25)**, and confirmed first: with a WebSocket and an event stream
+   held open, the client had reported 0 of their statements. Preparing the test found something
+   worse: a statement that ran after its request had ended — a fire-and-forget task, a circuit on
+   the long-polling transport — made the *application's own query* throw, because the operation's
+   name was read from an `HttpContext` ASP.NET Core had already disposed. gRPC streaming is still
+   one operation per call; nothing in the request says it will be long.
 3. **Ingest has no authentication.** Fine on loopback, which is what the defaults assume. Off-box,
    anything that can reach the port can post windows, read the UI and add targets. Add a shared key
    (`Momus:ApiKey` on the client, sent as a header; `MOMUS_INGEST_KEY` on the server), or document
    exposing only `POST /api/v1/ingest` through a proxy and reaching the UI through a tunnel.
+   **Fixed (D26)** with both halves and no proxy: `MOMUS_INGEST_KEY` / `Momus:IngestKey`, and
+   `MOMUS_INGEST_PORT`, a second port that serves only ingest and the health check.
 4. **A container build without `.git` has one version forever.** The SDK appends the commit to
    `InformationalVersion` only when it can see the repository, and most Dockerfiles exclude it. Every
    deploy then reports the same version, so there are no deploy markers and `regression` can never
@@ -238,7 +246,8 @@ could not have shown the problem.
    `SOS_WORK_DISPATCHER` (94%), `SQLTRACE_INCREMENTAL_FLUSH_SLEEP`, `PWAIT_EXTENSIBILITY_CLEANUP_TASK`,
    `QDS_ASYNC_QUEUE` and `BROKER_EVENTHANDLER` — all background waits that mean nothing. The benign
    list predates 2019/2022. A staging instance is quiet most of the day, so without this every scan's
-   waits are noise.
+   waits are noise. **Fixed**: the list now holds what two idle 2022 instances actually reported,
+   and `WaitStatsTests` pins both directions — those waits benign, a dozen real ones never.
 
 ## Decisions this needs
 

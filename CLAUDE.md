@@ -15,7 +15,8 @@ Read first, in this order:
 
 ```bash
 dotnet build
-dotnet test                                  # unit tests; MOMUS_TEST_PG="Host=...;Username=..." adds a live Postgres scan test
+dotnet test                                  # unit tests; MOMUS_TEST_PG="Host=...;Username=..." adds the live Postgres tests
+                                             # MOMUS_TEST_MSSQL="Server=...;User Id=sa;..." adds the live SQL Server tests (they create and drop their own databases)
 dotnet pack -c Release -o artifacts          # Momus (tool), Momus.Core, Momus.Postgres, Momus.SqlServer
 
 dotnet run --project src/Momus.Cli -- scan -p postgres -c "<connection string>" [--json report.json --quiet]
@@ -60,7 +61,7 @@ docs/                 DESIGN.md, PLAN.md
 - **Every finding carries a `Subject`.** Typed keys (`table:public.orders`, `query:<fingerprint>`) are how findings are joined and how the store recognises the same finding across scans. Never key identity on a title.
 - **One fingerprint for both sides.** `SqlFingerprint` must give the same key to the app's SQL and to the statistics view's SQL. Its tests are real captured pairs; regenerate them with `tools/FingerprintCapture` rather than editing the fixtures by hand.
 - **Insights never open a database connection** (1.0). They read the store. `IDiagnosticCheck` reads live views; keep the two kinds apart. `IInsightContext` is a snapshot loaded before any rule runs, so a rule is a pure function of its inputs and takes time from `ctx.Now`, never from the clock.
-- **Momus's own prose is invariant-culture.** The UI, the insight text and (in M3) the evidence packs are English; their numbers must read as English wherever the server runs. `MomusServer` pins the culture and the rules use `FormattableString.Invariant`.
+- **Momus's own prose is invariant-culture.** The UI, the insight text, the `scan` report (console and `--json`) and (in M3) the evidence packs are English; their numbers must read as English wherever Momus runs. `MomusCli` pins the culture before any command runs, `MomusServer` pins it for itself, and the rules use `FormattableString.Invariant`. Check titles are plain interpolation, so they depend on that pin (`CliCultureTests`).
 - **The client never sends literals, parameter values or result rows** (1.0). Only normalized text and aggregates leave the app.
 
 ## Working conventions

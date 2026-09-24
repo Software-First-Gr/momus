@@ -26,6 +26,29 @@ public static class MomusServer
 
     public static async Task<int> RunAsync(ServerOptions options, CancellationToken ct = default)
     {
+        var app = await BuildAsync(options, ct);
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Momus");
+
+        logger.LogInformation("Momus {Version} on http://localhost:{Port}, data in {Data}.",
+            Version, options.Port, Path.GetFullPath(options.DataDirectory));
+        if (options.IngestPort is { } ingestPort)
+        {
+            logger.LogInformation("Ingest only on port {IngestPort}, {Key}.", ingestPort,
+                options.IngestKey is { Length: > 0 } ? "key required" : "NO KEY: anything that can reach it may report");
+        }
+
+        await app.RunAsync(ct);
+        return 0;
+    }
+
+    /// <summary>
+    /// The server, built and ready to start: what <see cref="RunAsync"/> runs, and what the tests
+    /// start on ports of their own.
+    /// </summary>
+    public static async Task<WebApplication> BuildAsync(ServerOptions options, CancellationToken ct = default)
+    {
+        if (options.Problem() is { } problem) throw new ArgumentException(problem, nameof(options));
+
         // The UI, the insight text and the evidence packs are English, and their numbers should
         // read as English wherever the server runs. Without this, a machine with a Greek locale
         // renders "2.543 times a minute at 0,2 ms" inside an English sentence.
@@ -35,7 +58,9 @@ public static class MomusServer
             System.Globalization.CultureInfo.InvariantCulture;
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls($"http://0.0.0.0:{options.Port}");
+        builder.WebHost.UseUrls(options.IngestPort is { } port
+            ? [$"http://{options.ListenAddress}:{options.Port}", $"http://{options.ListenAddress}:{port}"]
+            : [$"http://{options.ListenAddress}:{options.Port}"]);
         builder.Logging.AddSimpleConsole(c => { c.SingleLine = true; c.TimestampFormat = "HH:mm:ss "; });
 
         // The interesting log line is "scanned shop: 3 findings", not one entry per page refresh.
@@ -54,6 +79,7 @@ public static class MomusServer
         builder.Services.AddSingleton<ScanScheduler>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanScheduler>());
         builder.Services.AddSingleton<IngestHandler>();
+        builder.Services.AddSingleton<IngestGate>();
         builder.Services.AddSingleton<InsightEngine>();
         builder.Services.AddSingleton<DiagnosticsBuilder>();
         builder.Services.AddScoped<Pages.HeaderInfo>();
@@ -73,6 +99,8 @@ public static class MomusServer
         await store.InitializeAsync(ct);
         await SeedTargetsAsync(store, options, logger, ct);
 
+        if (options.IngestPort is { } ingestPort) GuardIngestPort(app, ingestPort);
+
         app.MapRazorPages();
         app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = Version }));
         MapIngest(app);
@@ -81,16 +109,37 @@ public static class MomusServer
         app.MapGet("/api/v1/diagnostics", async (DiagnosticsBuilder diagnostics, CancellationToken ct) =>
             Results.Ok(await diagnostics.BuildAsync(ct)));
 
-        logger.LogInformation("Momus {Version} on http://localhost:{Port}, data in {Data}.",
-            Version, options.Port, Path.GetFullPath(options.DataDirectory));
-
-        await app.RunAsync(ct);
-        return 0;
+        return app;
     }
 
     /// <summary>
+    /// On the ingest port, the ingest endpoint and the health check are all there is. Judged by the
+    /// port the connection arrived on, never by the Host header: the caller writes that one, so a
+    /// request to the ingest port claiming to be for the main one must still find nothing.
+    /// </summary>
+    private static void GuardIngestPort(WebApplication app, int ingestPort) =>
+        app.Use(async (context, next) =>
+        {
+            var request = context.Request;
+            var allowed =
+                (HttpMethods.IsPost(request.Method) && request.Path == IngestPath) ||
+                (HttpMethods.IsGet(request.Method) && request.Path == "/healthz");
+
+            if (context.Connection.LocalPort == ingestPort && !allowed)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            await next(context);
+        });
+
+    private const string IngestPath = "/api/v1/ingest";
+
+    /// <summary>
     /// The application half of the wire: one endpoint, one frozen contract (DESIGN.md), and no
-    /// way for a client to ask the server to do anything but remember what it sent.
+    /// way for a client to ask the server to do anything but remember what it sent. With
+    /// <c>MOMUS_INGEST_KEY</c> set, only a client that sends the key gets that far.
     /// </summary>
     /// <remarks>
     /// The batch is bound by hand rather than through model binding so that a client one version
@@ -98,8 +147,14 @@ public static class MomusServer
     /// </remarks>
     private static void MapIngest(WebApplication app)
     {
-        app.MapPost("/api/v1/ingest", async (HttpRequest request, IngestHandler handler, CancellationToken ct) =>
+        app.MapPost(IngestPath, async (HttpRequest request, IngestHandler handler, IngestGate gate, CancellationToken ct) =>
         {
+            if (!gate.Admits(request.Headers[IngestJson.KeyHeader]))
+            {
+                gate.Refuse(request.HttpContext.Connection.RemoteIpAddress?.ToString());
+                return Results.Unauthorized();
+            }
+
             IngestBatch? batch;
             try
             {

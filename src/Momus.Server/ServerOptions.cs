@@ -34,6 +34,26 @@ public sealed record ServerOptions
 
     public int Port { get; init; } = 4848;
 
+    /// <summary>
+    /// A second port that serves the ingest endpoint and the health check and nothing else, so an
+    /// application on another machine can report without the pages — query text, the Settings
+    /// form that adds targets — being reachable from where it is. Publish the main port on
+    /// loopback and this one to the network.
+    /// </summary>
+    public int? IngestPort { get; init; }
+
+    /// <summary>
+    /// When set, a window is accepted only with this value in the <c>X-Momus-Key</c> header. Taken
+    /// from the environment only, never a flag, so it stays out of process listings and shell history.
+    /// </summary>
+    public string? IngestKey { get; init; }
+
+    /// <summary>
+    /// The address both ports listen on. Every interface, because in the container the published
+    /// ports decide what is reachable; tests listen on loopback.
+    /// </summary>
+    public string ListenAddress { get; init; } = "0.0.0.0";
+
     /// <summary>Statistics views are cheap to read; a minute keeps the history useful.</summary>
     public TimeSpan ScanInterval { get; init; } = TimeSpan.FromSeconds(60);
 
@@ -42,9 +62,10 @@ public sealed record ServerOptions
     public string DatabasePath => Path.Combine(DataDirectory, "momus.db");
 
     /// <summary>
-    /// Reads the environment: <c>MOMUS_DATA</c>, <c>MOMUS_PORT</c>, <c>MOMUS_SCAN_INTERVAL</c> and
-    /// <c>MOMUS_TARGETS__0__NAME</c> / <c>__PROVIDER</c> / <c>__CONNECTIONSTRING</c>. The indexed
-    /// form is the same shape ASP.NET Core configuration uses, so a compose file reads naturally.
+    /// Reads the environment: <c>MOMUS_DATA</c>, <c>MOMUS_PORT</c>, <c>MOMUS_INGEST_PORT</c>,
+    /// <c>MOMUS_INGEST_KEY</c>, <c>MOMUS_SCAN_INTERVAL</c> and <c>MOMUS_TARGETS__0__NAME</c> /
+    /// <c>__PROVIDER</c> / <c>__CONNECTIONSTRING</c>. The indexed form is the same shape ASP.NET
+    /// Core configuration uses, so a compose file reads naturally.
     /// </summary>
     public static ServerOptions FromEnvironment()
     {
@@ -52,16 +73,29 @@ public sealed record ServerOptions
 
         var data = Environment.GetEnvironmentVariable("MOMUS_DATA");
         var port = Environment.GetEnvironmentVariable("MOMUS_PORT");
+        var ingestPort = Environment.GetEnvironmentVariable("MOMUS_INGEST_PORT");
+        var ingestKey = Environment.GetEnvironmentVariable("MOMUS_INGEST_KEY");
         var interval = Environment.GetEnvironmentVariable("MOMUS_SCAN_INTERVAL");
 
         return options with
         {
             DataDirectory = string.IsNullOrWhiteSpace(data) ? options.DataDirectory : data,
             Port = int.TryParse(port, out var p) ? p : options.Port,
+            IngestPort = int.TryParse(ingestPort, out var ip) ? ip : null,
+            IngestKey = string.IsNullOrWhiteSpace(ingestKey) ? null : ingestKey.Trim(),
             ScanInterval = ParseInterval(interval) ?? options.ScanInterval,
             Targets = TargetsFromEnvironment().ToList(),
         };
     }
+
+    /// <summary>What is wrong with this configuration, or null. Checked before anything listens.</summary>
+    public string? Problem() => IngestPort switch
+    {
+        { } ingest when ingest == Port =>
+            $"The ingest port and the main port are both {Port}. The ingest port exists to be a different one.",
+        { } ingest when ingest is < 1 or > 65535 => $"{ingest} is not a port number.",
+        _ => null,
+    };
 
     private static IEnumerable<TargetSpec> TargetsFromEnvironment()
     {

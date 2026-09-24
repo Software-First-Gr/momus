@@ -204,6 +204,12 @@ public sealed record Timing(double Sum, double Max, IReadOnlyList<long> Hist)
 /// <summary>One JSON shape for both ends of the wire.</summary>
 public static class IngestJson
 {
+    /// <summary>
+    /// The header an application sends its ingest key in, when the server requires one
+    /// (<c>Momus:IngestKey</c> on the client, <c>MOMUS_INGEST_KEY</c> on the server).
+    /// </summary>
+    public const string KeyHeader = "X-Momus-Key";
+
     public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

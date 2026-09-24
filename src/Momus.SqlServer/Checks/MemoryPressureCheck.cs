@@ -30,7 +30,8 @@ public sealed class MemoryPressureCheck : IDiagnosticCheck
                 Severity = ple < 300 ? Severity.High : Severity.Medium,
                 Title = $"Page life expectancy is {ple}s",
                 Detail = "Pages are being evicted from the buffer pool quickly, which usually surfaces as " +
-                         "PAGEIOLATCH waits and slow queries. The classic floor is ~300s, scaled up for large buffer pools.",
+                         "PAGEIOLATCH waits and slow queries. The classic floor is ~300s, scaled up for large buffer pools. " +
+                         "The buffer pool is shared by every database on the instance, so the pressure may come from another one.",
                 Recommendation = "Check max server memory, look for scan-heavy queries flushing the pool " +
                                  "(see top CPU queries), and consider more RAM if the working set simply doesn't fit.",
                 Subjects = [Subject.ForServer()],

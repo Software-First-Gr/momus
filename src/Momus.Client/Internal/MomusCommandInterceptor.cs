@@ -81,11 +81,18 @@ internal sealed class MomusCommandInterceptor(
     /// </summary>
     private void Warm(DbCommand command)
     {
-        if (OperationContext.Current is not { } operation) return;
-        if (command.CommandText is not { Length: > 0 } text) return;
+        try
+        {
+            if (OperationContext.Current is not { } operation) return;
+            if (command.CommandText is not { Length: > 0 } text) return;
 
-        var fingerprint = Fingerprint(text);
-        CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+            var fingerprint = Fingerprint(text);
+            CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+        }
+        catch (Exception)
+        {
+            MomusRuntime.Fault();
+        }
     }
 
     // ---- executed ----------------------------------------------------------------------
@@ -159,12 +166,19 @@ internal sealed class MomusCommandInterceptor(
     public override InterceptionResult DataReaderDisposing(
         DbCommand command, DataReaderDisposingEventData data, InterceptionResult result)
     {
-        var operation = OperationContext.Current;
-        if (operation is not null && data.ReadCount > 0 && command.CommandText is { Length: > 0 } text)
+        try
         {
-            var fingerprint = Fingerprint(text);
-            var callSite = CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
-            operation.AddRows(fingerprint.Key, callSite, data.ReadCount - 1);
+            var operation = OperationContext.Current;
+            if (operation is not null && data.ReadCount > 0 && command.CommandText is { Length: > 0 } text)
+            {
+                var fingerprint = Fingerprint(text);
+                var callSite = CallSites.For(fingerprint.Key, operation.Name, fingerprint.Tag);
+                operation.AddRows(fingerprint.Key, callSite, data.ReadCount - 1);
+            }
+        }
+        catch (Exception)
+        {
+            MomusRuntime.Fault();
         }
 
         return result;
@@ -172,7 +186,24 @@ internal sealed class MomusCommandInterceptor(
 
     // ---- the work ----------------------------------------------------------------------
 
+    /// <summary>
+    /// Everything the client does after a statement ran. Guarded as a whole: an exception thrown
+    /// here would come out of the application's own query, which is the one thing the client must
+    /// never cause.
+    /// </summary>
     private void Record(DbCommand command, CommandEndEventData data, long rows, bool failed)
+    {
+        try
+        {
+            RecordUnguarded(command, data, rows, failed);
+        }
+        catch (Exception)
+        {
+            MomusRuntime.Fault();
+        }
+    }
+
+    private void RecordUnguarded(DbCommand command, CommandEndEventData data, long rows, bool failed)
     {
         var text = command.CommandText;
         if (string.IsNullOrEmpty(text)) return;

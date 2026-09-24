@@ -11,6 +11,10 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
 
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
+        // pg_stat_activity lists the sessions of every database in the cluster. A session in a
+        // neighbouring database is not this target's, and since D22 a session's last statement is
+        // joined to the app by fingerprint — two databases running the same application would
+        // otherwise lend each other's idle transactions as agreement.
         var rows = await Db.QueryAsync(connection, """
             SELECT pid, state, usename, application_name,
                    extract(epoch FROM now() - state_change)::bigint AS in_state_secs,
@@ -18,6 +22,7 @@ public sealed class ProblemSessionsCheck : IDiagnosticCheck
                    left(query, 300) AS query, query AS full_query
             FROM pg_stat_activity
             WHERE pid <> pg_backend_pid()
+              AND datname = current_database()
               AND ((state = 'idle in transaction' AND now() - state_change > interval '5 minutes')
                 OR (state = 'active' AND now() - query_start > interval '5 minutes'))
             ORDER BY state_change

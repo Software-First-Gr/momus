@@ -63,6 +63,24 @@ one thing a one-shot scan can never tell you.
 connection string is stored as given in the SQLite file on `/data`. Publish the port to
 `127.0.0.1` as above, or put it behind your own proxy.
 
+When the application runs on another machine, it needs to reach the ingest endpoint and nothing
+else. Give it a port of its own and a key, and keep the pages on loopback:
+
+```bash
+docker run -d --name momus -v momus-data:/data \
+  -p 127.0.0.1:4848:4848 -p 4849:4849 \
+  -e MOMUS_INGEST_PORT=4849 -e MOMUS_INGEST_KEY="<a long random value>" \
+  -e MOMUS_TARGETS__0__NAME=shop -e MOMUS_TARGETS__0__PROVIDER=postgres \
+  -e MOMUS_TARGETS__0__CONNECTIONSTRING="Host=db;Username=momus;Password=…;Database=shop" \
+  softwarefirst/momus:edge
+```
+
+Port 4849 answers `POST /api/v1/ingest` and `GET /healthz` and returns 404 for everything else,
+judged by the port the connection arrived on. With `MOMUS_INGEST_KEY` set, a window without the
+same value in `Momus:IngestKey` is refused, the application logs that once, and the server's
+diagnostics page counts the refusals. The key travels in a header, so across a network you do not
+trust, put TLS in front. Open the pages through an SSH tunnel: `ssh -L 4848:127.0.0.1:4848 <host>`.
+
 ### The user it needs
 
 Momus only reads statistics views, but on both engines those are privileged. A dedicated
@@ -145,6 +163,7 @@ What leaves your process, and what never does:
 | `Momus:ShareConnectionStrings` | on when the endpoint is loopback |
 | `Momus:FlushSeconds` | `5` |
 | `Momus:AppName` | the entry assembly's name |
+| `Momus:IngestKey` | none; required when the server sets `MOMUS_INGEST_KEY` |
 
 `ShareConnectionStrings` is how the server learns which database to scan without you configuring
 it twice. It sends the connection string of the contexts that ran statements, so leave it off
@@ -155,6 +174,11 @@ For work that is not a request, name it yourself:
 ```csharp
 using var operation = MomusOperation.Begin("NightlyInvoiceRun");
 ```
+
+A WebSocket or a server-sent event stream is a connection, not a request, so it is never one
+operation: a Blazor Server circuit would otherwise report nothing until its tab closed, and read
+every repeated lookup as a loop. Statements run on one are reported as they happen, named after the
+innermost `Activity` — a mediator's or a job's span, if the application has them.
 
 ## When it is not doing what you expected
 
@@ -206,6 +230,11 @@ degrades gracefully when absent).
 optimizer-suggested missing indexes, top queries by CPU, live blocking chains,
 buffer-pool pressure (page life expectancy).
 
+Statements, sessions and blocking are reported for the database in the connection string, even
+when other databases share the server; connect to `master` to see the whole SQL Server instance.
+Waits, page life expectancy, the cache hit ratio and connection saturation belong to the server
+and say so.
+
 Findings carry a severity (`info`→`critical`), a plain-language explanation, a
 recommendation, and structured evidence for downstream/AI consumption.
 
@@ -244,7 +273,8 @@ Design rules the code follows:
 
 ```bash
 dotnet test                                                        # unit tests
-MOMUS_TEST_PG="Host=localhost;Username=postgres" dotnet test       # + live Postgres scan
+MOMUS_TEST_PG="Host=localhost;Username=postgres" dotnet test       # + live Postgres tests
+MOMUS_TEST_MSSQL="Server=localhost;User Id=sa;Password=…;TrustServerCertificate=True" dotnet test   # + live SQL Server tests
 ```
 
 ## What it tells you

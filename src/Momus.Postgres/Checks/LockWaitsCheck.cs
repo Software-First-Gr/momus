@@ -22,6 +22,8 @@ public sealed class LockWaitsCheck : IDiagnosticCheck
     {
         // state_change is when an active session started its statement, so the wait is "at least
         // this long". pg_locks.waitstart would be exact, but only exists from PostgreSQL 14.
+        // Only sessions waiting in this database: pg_stat_activity is cluster-wide. The holder is
+        // not filtered — whoever holds the lock is the answer, whatever database it is in.
         var rows = await Db.QueryAsync(connection, $"""
             SELECT w.pid, w.usename, w.application_name, w.wait_event,
                    extract(epoch FROM now() - w.state_change)::bigint AS waiting_secs,
@@ -40,6 +42,7 @@ public sealed class LockWaitsCheck : IDiagnosticCheck
             ) b ON true
             WHERE w.wait_event_type = 'Lock'
               AND w.pid <> pg_backend_pid()
+              AND w.datname = current_database()
               AND now() - w.state_change > interval '{PostgresThresholds.LockWaitMinSeconds} seconds'
             ORDER BY w.state_change
             LIMIT 20

@@ -12,6 +12,21 @@ internal static class MomusRuntime
 
     public static void Use(OperationQueue queue) => Queue ??= queue;
 
+    private static long _faults;
+
+    /// <summary>
+    /// Counts an exception the client caught in its own code inside an EF Core callback. Anything
+    /// thrown there fails the application's query, so the interceptors catch everything, skip the
+    /// statement and count it here; the exporter says so in the application's log.
+    /// </summary>
+    internal static void Fault() => Interlocked.Increment(ref _faults);
+
+    internal static long TakeFaults() => Interlocked.Exchange(ref _faults, 0);
+
     /// <summary>For tests, which build more than one container in a process.</summary>
-    internal static void Reset() => Queue = null;
+    internal static void Reset()
+    {
+        Queue = null;
+        Interlocked.Exchange(ref _faults, 0);
+    }
 }

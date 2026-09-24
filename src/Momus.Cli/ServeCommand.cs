@@ -30,6 +30,15 @@ public static class ServeCommand
                     options = options with { Port = port };
                     break;
 
+                case "--ingest-port" when i + 1 < args.Length:
+                    if (!int.TryParse(args[++i], out var ingestPort) || ingestPort is < 1 or > 65535)
+                    {
+                        Console.Error.WriteLine($"'{args[i]}' is not a port number.");
+                        return 2;
+                    }
+                    options = options with { IngestPort = ingestPort };
+                    break;
+
                 case "--scan-interval" when i + 1 < args.Length:
                     var interval = ServerOptions.ParseInterval(args[++i]);
                     if (interval is null)
@@ -56,6 +65,12 @@ public static class ServeCommand
                     Usage.Print();
                     return 2;
             }
+        }
+
+        if (options.Problem() is { } problem)
+        {
+            Console.Error.WriteLine(problem);
+            return 2;
         }
 
         try

@@ -74,27 +74,43 @@ internal sealed class MomusTransactionInterceptor(MomusOptions options) : DbTran
     public override void TransactionFailed(DbTransaction transaction, TransactionErrorEventData data) =>
         Close(data.TransactionId);
 
+    // Both guarded like the command interceptor: an exception here fails the application's
+    // BeginTransaction or Commit.
     private void Track(Guid id)
     {
-        if (OperationContext.Current is not { } operation) return;
-        if (_open.Count >= MaxInFlight) return;
+        try
+        {
+            if (OperationContext.Current is not { } operation) return;
+            if (_open.Count >= MaxInFlight) return;
 
-        _open.TryAdd(id, new Open(
-            Stopwatch.GetTimestamp(),
-            operation.DbMsSoFar,
-            CallSites.For($"tx:{id}", operation.Name, null)));
+            _open.TryAdd(id, new Open(
+                Stopwatch.GetTimestamp(),
+                operation.DbMsSoFar,
+                CallSites.For($"tx:{id}", operation.Name, null)));
+        }
+        catch (Exception)
+        {
+            MomusRuntime.Fault();
+        }
     }
 
     private void Close(Guid id)
     {
-        if (!_open.TryRemove(id, out var open)) return;
-        if (OperationContext.Current is not { } operation) return;
+        try
+        {
+            if (!_open.TryRemove(id, out var open)) return;
+            if (OperationContext.Current is not { } operation) return;
 
-        operation.RecordTransaction(
-            Stopwatch.GetElapsedTime(open.StartedAt).TotalMilliseconds,
-            operation.DbMsSoFar - open.DbMsAtStart,
-            open.CallSite,
-            options.MaxKeysPerOperation);
+            operation.RecordTransaction(
+                Stopwatch.GetElapsedTime(open.StartedAt).TotalMilliseconds,
+                operation.DbMsSoFar - open.DbMsAtStart,
+                open.CallSite,
+                options.MaxKeysPerOperation);
+        }
+        catch (Exception)
+        {
+            MomusRuntime.Fault();
+        }
     }
 
     /// <param name="DbMsAtStart">

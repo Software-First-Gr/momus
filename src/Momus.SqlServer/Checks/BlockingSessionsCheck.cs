@@ -11,12 +11,16 @@ public sealed class BlockingSessionsCheck : IDiagnosticCheck
 
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
-        var rows = await Db.QueryAsync(connection, """
+        // dm_exec_requests is instance-wide. A blocked request belongs to the database it is running
+        // in; blocking in a neighbouring database is that database's finding, not this one's.
+        var rows = await Db.QueryAsync(connection, $"""
             SELECT r.session_id, r.blocking_session_id, r.wait_type, r.wait_time,
+                   DB_NAME(r.database_id) AS database_name,
                    LEFT(st.text, 300) AS query_text
             FROM sys.dm_exec_requests r
             OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) st
             WHERE r.blocking_session_id <> 0
+              AND (r.database_id = DB_ID() OR DB_ID() <= {TopCpuQueriesCheck.SystemDatabaseMaxId})
             """, ct);
 
         return rows.Select(row =>
@@ -43,6 +47,7 @@ public sealed class BlockingSessionsCheck : IDiagnosticCheck
                     ["blocking_session_id"] = Db.ToLong(row["blocking_session_id"]),
                     ["wait_type"] = Db.ToStr(row["wait_type"]),
                     ["wait_ms"] = waitMs,
+                    ["database"] = Db.ToStr(row["database_name"]),
                     ["query"] = Db.ToStr(row["query_text"]).Trim(),
                 },
             };
