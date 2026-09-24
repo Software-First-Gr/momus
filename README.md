@@ -4,8 +4,9 @@
 
 **Status:** pre-release. The collector core, the CLI, `momus serve` and the app-side client all
 work today — **from a checkout**. Nothing current is published: `Momus` 0.0.1 on nuget.org was
-uploaded to claim the id before the server existed, so it has no `serve` command, and no image
-has been pushed to GHCR yet. Both land with `v0.1.0`. Until then, build from source
+uploaded to claim the id before the server existed, so it has no `serve` command, and the image
+`softwarefirst/momus` on Docker Hub carries only `edge`, rebuilt from `develop` on every push.
+Released versions of both land with `v0.1.0`. Until then, use `edge` or build from source
 (`docker compose up --build`, or the *Quick start from source* section below). The API and
 package layout may change until 1.0.
 

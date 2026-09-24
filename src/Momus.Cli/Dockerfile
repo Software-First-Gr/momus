@@ -23,6 +23,15 @@ RUN dotnet publish src/Momus.Cli/Momus.Cli.csproj -c Release -o /app --no-restor
     $( [ -n "$VERSION" ] && echo -p:Version=${VERSION#v} )
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+
+# The Alpine image runs .NET in globalization-invariant mode, and Microsoft.Data.SqlClient refuses
+# to open a connection in it ("Globalization Invariant Mode is not supported"), so every SQL Server
+# scan failed before a single check ran. Npgsql does not care, which is why the Postgres demo never
+# showed it. icu-data-full rather than the English-only data: a server's collation can be any
+# language, and SqlClient resolves it through ICU.
+RUN apk add --no-cache icu-libs icu-data-full
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+
 WORKDIR /app
 COPY --from=build /app ./
 

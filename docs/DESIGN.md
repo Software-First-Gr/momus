@@ -292,7 +292,7 @@ Also published as a dotnet global tool: `dotnet tool install -g Momus`.
 | `MOMUS_LICENSE` | none | Pro key, validated offline |
 
 ```
-docker run -d --name momus -p 4848:4848 -v momus-data:/data ghcr.io/software-first-gr/momus
+docker run -d --name momus -p 4848:4848 -v momus-data:/data softwarefirst/momus
 ```
 
 Base image `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`, published framework-dependent, well under 150 MB. The free build binds to all interfaces with no authentication, so the README says in its first screen: put it behind your own proxy if it leaves your machine. Pro adds a login.
