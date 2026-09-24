@@ -11,10 +11,13 @@ public sealed class MissingIndexesCheck : IDiagnosticCheck
 
     public async Task<IReadOnlyList<Finding>> RunAsync(DbConnection connection, CancellationToken ct)
     {
+        // The table is named from the DMV's own "statement" column ([db].[schema].[table]), not
+        // with OBJECT_NAME: that needs metadata visibility in the database, and without it came
+        // back NULL — measured on 2022, a login with VIEW SERVER STATE and a database user got
+        // "Optimizer wants an index on  (est. 99% improvement)", keyed to a table with no name.
         var rows = await Db.QueryAsync(connection, """
             SELECT TOP 10
-                OBJECT_SCHEMA_NAME(mid.object_id, mid.database_id) + '.' +
-                    OBJECT_NAME(mid.object_id, mid.database_id) AS table_name,
+                PARSENAME(mid.statement, 2) + '.' + PARSENAME(mid.statement, 1) AS table_name,
                 migs.avg_user_impact,
                 migs.user_seeks + migs.user_scans AS uses,
                 migs.avg_total_user_cost,

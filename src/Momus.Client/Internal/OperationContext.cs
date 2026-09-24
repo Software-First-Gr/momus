@@ -11,6 +11,16 @@ namespace Momus.Client.Internal;
 /// N+1 is only visible from inside one request: forty executions of one statement across a minute
 /// is a busy endpoint, forty inside one request is a bug.
 /// </summary>
+/// <remarks>
+/// One operation can be recorded into from several threads at once: a request that runs two
+/// contexts together (<c>Task.WhenAll</c> over an <c>IDbContextFactory</c>) carries one operation
+/// in its execution context, and the interceptors fire on whichever thread each statement finishes
+/// on. Every tally is therefore behind <see cref="_gate"/>. Without it, statements run that way
+/// went missing from the counts in 18 to 20 of every 20 rounds of <c>ConcurrencyTests</c>, and a
+/// map corrupted by two inserts at once made <see cref="Complete"/> throw into the application.
+/// Uncontended, which is the usual case of one thread per operation, the lock adds about 3 ns to a
+/// statement that costs EF Core and the database a great deal more.
+/// </remarks>
 internal sealed class OperationContext(string kind, HttpContext? http, string? explicitName)
 {
     private static readonly AsyncLocal<OperationContext?> Ambient = new();
@@ -18,6 +28,7 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     private readonly Dictionary<(string Key, string? CallSite), QueryTally> _queries = new();
     private readonly List<TransactionRecord> _transactions = [];
     private readonly List<double> _poolWaits = [];
+    private readonly object _gate = new();
     private readonly long _startedAt = Stopwatch.GetTimestamp();
     private OperationContext? _previous;
     private string? _name;
@@ -116,22 +127,25 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     /// <summary>Records one statement execution against this operation.</summary>
     public void Record(string key, string? callSite, string sample, double durationMs, long rows, bool failed, int maxKeys)
     {
-        QueryCount++;
-        DbMs += durationMs;
-
-        var id = (key, callSite);
-        if (!_queries.TryGetValue(id, out var tally))
+        lock (_gate)
         {
-            if (_queries.Count >= maxKeys)
-            {
-                Overflow++;
-                return;
-            }
-            tally = new QueryTally(sample);
-            _queries[id] = tally;
-        }
+            QueryCount++;
+            DbMs += durationMs;
 
-        tally.Add(durationMs, rows, failed);
+            var id = (key, callSite);
+            if (!_queries.TryGetValue(id, out var tally))
+            {
+                if (_queries.Count >= maxKeys)
+                {
+                    Overflow++;
+                    return;
+                }
+                tally = new QueryTally(sample);
+                _queries[id] = tally;
+            }
+
+            tally.Add(durationMs, rows, failed);
+        }
     }
 
     /// <summary>
@@ -141,52 +155,82 @@ internal sealed class OperationContext(string kind, HttpContext? http, string? e
     /// </summary>
     public void RecordTransaction(double openMs, double dbMs, string? callSite, int maxRecords)
     {
-        if (_transactions.Count >= maxRecords) return;
-        _transactions.Add(new TransactionRecord(openMs, dbMs, callSite));
+        lock (_gate)
+        {
+            if (_transactions.Count >= maxRecords) return;
+            _transactions.Add(new TransactionRecord(openMs, dbMs, callSite));
+        }
     }
 
     /// <summary>Records how long this operation waited to get a connection.</summary>
     public void RecordPoolWait(double waitMs, int maxRecords)
     {
-        if (_poolWaits.Count >= maxRecords) return;
-        _poolWaits.Add(waitMs);
+        lock (_gate)
+        {
+            if (_poolWaits.Count >= maxRecords) return;
+            _poolWaits.Add(waitMs);
+        }
     }
 
     /// <summary>Database time so far, for measuring how much of a transaction was actually work.</summary>
-    public double DbMsSoFar => DbMs;
+    public double DbMsSoFar
+    {
+        get
+        {
+            lock (_gate) return DbMs;
+        }
+    }
 
     /// <summary>Adds rows to a statement already recorded, once its reader has been read to the end.</summary>
     public void AddRows(string key, string? callSite, long rows)
     {
         if (rows <= 0) return;
-        if (_queries.TryGetValue((key, callSite), out var tally)) tally.Rows += rows;
+
+        lock (_gate)
+        {
+            if (_queries.TryGetValue((key, callSite), out var tally)) tally.Rows += rows;
+        }
     }
 
-    public CompletedOperation Complete(bool countsAsOperation) => new()
+    /// <summary>
+    /// A snapshot that owns everything in it. A statement that finished just as the operation
+    /// ended can still be recording on another thread, so the histograms are copied rather than
+    /// shared with tallies that may yet change under the exporter.
+    /// </summary>
+    public CompletedOperation Complete(bool countsAsOperation)
     {
-        Name = Name,
-        Kind = Kind,
-        DurationMs = ElapsedMs,
-        DbMs = DbMs,
-        QueryCount = QueryCount,
-        Overflow = Overflow,
-        CountsAsOperation = countsAsOperation,
-        Transactions = _transactions.ToArray(),
-        PoolWaits = _poolWaits.ToArray(),
-        Queries = _queries.Select(q => new QueryExecutions
-        {
-            Key = q.Key.Key,
-            CallSite = q.Key.CallSite,
-            Sample = q.Value.Sample,
-            Count = q.Value.Count,
-            SumMs = q.Value.SumMs,
-            MaxMs = q.Value.MaxMs,
-            Rows = q.Value.Rows,
-            Errors = q.Value.Errors,
-            Histogram = q.Value.Histogram,
-        }).ToArray(),
-    };
+        var name = Name;
 
+        lock (_gate)
+        {
+            return new CompletedOperation
+            {
+                Name = name,
+                Kind = Kind,
+                DurationMs = ElapsedMs,
+                DbMs = DbMs,
+                QueryCount = QueryCount,
+                Overflow = Overflow,
+                CountsAsOperation = countsAsOperation,
+                Transactions = _transactions.ToArray(),
+                PoolWaits = _poolWaits.ToArray(),
+                Queries = _queries.Select(q => new QueryExecutions
+                {
+                    Key = q.Key.Key,
+                    CallSite = q.Key.CallSite,
+                    Sample = q.Value.Sample,
+                    Count = q.Value.Count,
+                    SumMs = q.Value.SumMs,
+                    MaxMs = q.Value.MaxMs,
+                    Rows = q.Value.Rows,
+                    Errors = q.Value.Errors,
+                    Histogram = (long[])q.Value.Histogram.Clone(),
+                }).ToArray(),
+            };
+        }
+    }
+
+    /// <summary>Only ever touched under the operation's <see cref="_gate"/>.</summary>
     private sealed class QueryTally(string sample)
     {
         public string Sample { get; } = sample;

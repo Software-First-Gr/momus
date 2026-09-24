@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Momus.Core.Ingest;
 using Momus.Server.Store;
@@ -15,6 +16,7 @@ public sealed class IngestHandler(
     ILogger<IngestHandler> logger)
 {
     private bool _sawFirstWindow;
+    private readonly ConcurrentDictionary<string, string> _announcedMatches = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Rejects a batch that could not be joined to anything, and says why.</summary>
     public static string? Validate(IngestBatch? batch) => batch switch
@@ -27,6 +29,7 @@ public sealed class IngestHandler(
 
     public async Task<long> HandleAsync(IngestBatch batch, CancellationToken ct)
     {
+        batch = await MatchTargetsAsync(batch, ct);
         var windowId = await store.SaveIngestBatchAsync(batch, ct);
         await RegisterTargetsAsync(batch, ct);
 
@@ -39,6 +42,29 @@ public sealed class IngestHandler(
         }
 
         return windowId;
+    }
+
+    /// <summary>
+    /// Rewrites the batch's database ids to the scanned targets they match (<see cref="TargetMatch"/>),
+    /// saying so once per database, because a join that happens silently is as confusing as one
+    /// that silently does not.
+    /// </summary>
+    private async Task<IngestBatch> MatchTargetsAsync(IngestBatch batch, CancellationToken ct)
+    {
+        if (batch.Targets.Count == 0) return batch;
+
+        var (matched, renamed) = TargetMatch.Resolve(batch, await store.TargetsAsync(ct));
+        foreach (var (from, to) in renamed)
+        {
+            if (_announcedMatches.TryAdd(from, to))
+            {
+                logger.LogInformation(
+                    "{App} names its database {From}; matched to target {To} by provider and database name.",
+                    batch.App.Name, from, to);
+            }
+        }
+
+        return matched;
     }
 
     /// <summary>

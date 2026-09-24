@@ -119,6 +119,63 @@ public class SqlServerIntegrationTests
         }
     }
 
+    /// <summary>
+    /// The least a scanning login needs, and what each part is for. Measured on SQL Server 2022:
+    /// with VIEW SERVER STATE alone the login cannot open the database and no check runs; with a
+    /// user in it every check runs — and the missing-index check used to name no table, because
+    /// OBJECT_NAME needs metadata visibility that login does not have.
+    /// </summary>
+    [Fact]
+    public async Task The_least_login_that_works_is_view_server_state_and_a_user_in_the_database()
+    {
+        if (Server is null) return;
+        await using var db = await TestDatabase.CreateAsync(Server);
+
+        // A table big enough, and a query shaped enough, for the optimizer to want an index. A
+        // trivial plan never gets a suggestion.
+        await TestDatabase.ExecuteAsync(db.ConnectionString, """
+            SET NOCOUNT ON;
+            CREATE TABLE dbo.orders (id int IDENTITY PRIMARY KEY, customer_id int, status int, filler char(200) DEFAULT 'x');
+            INSERT dbo.orders (customer_id, status)
+                SELECT TOP 50000 ABS(CHECKSUM(NEWID())) % 5000, 1 FROM sys.all_objects a CROSS JOIN sys.all_objects b;
+            DECLARE @i int = 0;
+            WHILE @i < 300
+            BEGIN
+                EXEC sp_executesql N'SELECT o.id, o.status FROM dbo.orders o WHERE o.customer_id = @id AND o.status > 0 ORDER BY o.status, o.id',
+                    N'@id int', @id = 42;
+                SET @i += 1;
+            END
+            """);
+
+        var login = $"momus_{db.Token}";
+        const string password = "Least-Login-2026-ok";
+        await TestDatabase.ExecuteAsync(Server, $"CREATE LOGIN [{login}] WITH PASSWORD = '{password}'; GRANT VIEW SERVER STATE TO [{login}];");
+        var asLogin = new SqlConnectionStringBuilder(db.ConnectionString)
+        {
+            UserID = login, Password = password, IntegratedSecurity = false, Pooling = false,
+        }.ConnectionString;
+
+        try
+        {
+            var noUser = await Assert.ThrowsAsync<SqlException>(() => RunAsync(new MissingIndexesCheck(), asLogin));
+            Assert.Contains("Cannot open database", noUser.Message);
+
+            await TestDatabase.ExecuteAsync(db.ConnectionString, $"CREATE USER [{login}] FOR LOGIN [{login}];");
+
+            var report = await new CollectorEngine().ScanAsync(new SqlServerScanTarget(asLogin));
+            Assert.All(report.Checks, c => Assert.True(c.Succeeded, $"{c.CheckId} failed: {c.Error}"));
+
+            var missing = Assert.Single(report.Checks, c => c.CheckId == "mssql.missing_indexes").Findings;
+            var finding = Assert.Single(missing);
+            Assert.Contains(Subject.ForTable("dbo.orders"), finding.Subjects);
+            Assert.Contains("dbo.orders", finding.Title);
+        }
+        finally
+        {
+            await TestDatabase.ExecuteAsync(Server, $"DROP LOGIN [{login}];");
+        }
+    }
+
     private static async Task<IReadOnlyList<Finding>> RunAsync(IDiagnosticCheck check, string connectionString)
     {
         await using var connection = new SqlConnection(connectionString);
@@ -187,7 +244,7 @@ public class SqlServerIntegrationTests
                 $"ALTER DATABASE [{Name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{Name}];");
         }
 
-        private static async Task ExecuteAsync(string connectionString, string sql)
+        public static async Task ExecuteAsync(string connectionString, string sql)
         {
             await using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync();

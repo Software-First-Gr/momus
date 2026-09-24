@@ -106,7 +106,7 @@ One line in `Program.cs`: `builder.Services.AddMomus();`. No middleware call, no
 | Query | `DbCommandInterceptor` reader, non-query and scalar events | fingerprint × operation × call site | count, duration sum/max, log2 histogram, rows, max repeats in one op, errors |
 | Transaction | `IDbTransactionInterceptor` started, committed, rolled back | operation × call site | count, open ms sum/max, DB ms inside sum |
 | Pool wait | `IDbConnectionInterceptor` opening to opened | operation | count, wait ms sum/max |
-| Deploy | Entry assembly informational version, host, process start | app × version | first seen, last seen |
+| Deploy | Entry assembly informational version; when it names no revision, plus a fingerprint of every shipped assembly's module id and the runtime version (D27), host, process start | app × version | first seen, last seen |
 
 ### Call site without asking the user for tags
 

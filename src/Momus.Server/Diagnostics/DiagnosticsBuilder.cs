@@ -114,7 +114,12 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options, 
             if (target.LastError is { } error)
             {
                 checks.Add(new Check(Verdict.Problem, $"{target.Name}: the last scan failed — {error}",
-                    "Usually the host, the password, or a firewall. Momus retries every interval."));
+                    error.Contains("Cannot open database", StringComparison.OrdinalIgnoreCase)
+                        // SQL Server: the login exists and VIEW SERVER STATE is not the problem; the
+                        // login has no user in the database named in the connection string.
+                        ? "The login has no user in that database. In it, run CREATE USER <login> FOR LOGIN " +
+                          "<login>; it needs no permission there, only to exist."
+                        : "Usually the host, the password, or a firewall. Momus retries every interval."));
             }
             else if (target.LastScanAt is null)
             {
@@ -194,6 +199,16 @@ public sealed class DiagnosticsBuilder(MomusStore store, ServerOptions options, 
             checks.Add(new Check(Verdict.Ok,
                 $"{report.Apps[0].Name} is reporting: {report.Ingest.WindowsSince} window(s) " +
                 $"and {report.Ingest.DistinctStatements} distinct statement(s) in the last hour."));
+        }
+
+        // A deploy is a version the server has not seen before. One that names no revision is the
+        // same string after every deploy, so each looks like a restart and regression never fires.
+        foreach (var app in report.Apps.Where(a => a.Version?.Contains('+') != true))
+        {
+            checks.Add(new Check(Verdict.Warning,
+                $"{app.Name} reports version {app.Version ?? "(none)"} with no revision, so a deploy cannot be told from a restart.",
+                "Momus.Client appends a build fingerprint when the version has no revision, so upgrade it; " +
+                "or build with -p:SourceRevisionId=<commit>, which is what the SDK does itself when it can see .git."));
         }
 
         if (report.Ingest.Dropped > 0)

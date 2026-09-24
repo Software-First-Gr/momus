@@ -126,6 +126,45 @@ public class DiagnosticsTests
         Assert.Contains("Matched on both sides: 1", markdown);
     }
 
+    [Theory]
+    [InlineData("1.0.0", true)]
+    [InlineData(null, true)]
+    [InlineData("1.0.0+3f1c9d0a", false)]
+    [InlineData("1.0.0+build.3e45f2a750a8", false)]
+    public async Task A_version_with_no_revision_is_a_warning_because_deploys_would_look_like_restarts(
+        string? version, bool warned)
+    {
+        await using var store = await MomusStore.InMemoryAsync();
+        await AddTargetAsync(store);
+        await store.SaveIngestBatchAsync(Batch() with { App = new IngestApp("Shop.Api", version, "web-01:1", "Staging") });
+
+        var report = await Build(store);
+
+        var check = report.Checks.SingleOrDefault(c => c.Headline.Contains("with no revision"));
+        Assert.Equal(warned, check is not null);
+        if (check is not null)
+        {
+            Assert.Equal(Verdict.Warning, check.Verdict);
+            Assert.Contains("SourceRevisionId", check.WhatToDo);
+        }
+    }
+
+    [Fact]
+    public async Task A_login_with_no_user_in_the_database_is_told_to_create_one()
+    {
+        // The SQL Server failure a new install meets first, measured: the login exists and holds
+        // VIEW SERVER STATE, and the scan still cannot open the database.
+        await using var store = await MomusStore.InMemoryAsync();
+        await AddTargetAsync(store);
+        await store.RecordScanFailureAsync("shop",
+            "Cannot open database \"shop\" requested by the login. The login failed.\nLogin failed for user 'momus'.");
+
+        var report = await Build(store);
+
+        var check = Assert.Single(report.Checks, c => c.Headline.Contains("the last scan failed"));
+        Assert.Contains("CREATE USER", check.WhatToDo);
+    }
+
     // ---- fixtures ----------------------------------------------------------------------
 
     private static Task<DiagnosticsReport> Build(MomusStore store) =>

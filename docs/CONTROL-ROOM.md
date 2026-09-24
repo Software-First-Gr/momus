@@ -225,16 +225,23 @@ could not have shown the problem.
    `InformationalVersion` only when it can see the repository, and most Dockerfiles exclude it. Every
    deploy then reports the same version, so there are no deploy markers and `regression` can never
    fire. Document passing the revision (`-p:SourceRevisionId=$COMMIT`), and have Diagnostics warn
-   when an app's version carries no revision and has never changed.
+   when an app's version carries no revision and has never changed. **Fixed (D27)** without asking
+   the application to change its build: the client fingerprints the build when the version names no
+   revision, and Diagnostics warns when a version still names none.
 5. **The SQL Server grant in the README is incomplete.** A login that connects with `Database=X`
    needs a user in X, and the missing-index check's `OBJECT_NAME(object_id, database_id)` returns
    NULL without metadata visibility. The minimum is `VIEW SERVER STATE` at the server, and
-   `CREATE USER … FOR LOGIN …` plus `VIEW DEFINITION` in the database.
+   `CREATE USER … FOR LOGIN …` plus `VIEW DEFINITION` in the database. **Fixed (D28)**, and smaller
+   than proposed: measured, the check can name the table from the DMV's own `statement` column, so
+   `VIEW DEFINITION` is not needed — `VIEW SERVER STATE` and a user with no permissions is the whole
+   grant (on 2022, `VIEW SERVER PERFORMANCE STATE` is enough).
 6. **Target ids must match by accident.** A target from `MOMUS_TARGETS__n__NAME` gets the slug of
    that name as its id; the client names a target by the slug of the database name. When the client
    does not share connection strings — every non-loopback setup — the application's queries join to
    the scanned database only if the two happen to be equal. Match on provider and database name as
-   well as id, or at least say so in the README.
+   well as id, or at least say so in the README. **Fixed (D29)**: matched on provider and database
+   name, from the last scan or else from the target's connection string, and never guessed when two
+   targets share the name.
 7. **The container could not scan SQL Server at all.** The Alpine runtime image runs .NET in
    globalization-invariant mode, and Microsoft.Data.SqlClient refuses to connect in it: every scan
    ended with "Globalization Invariant Mode is not supported" before a check ran. The Postgres demo

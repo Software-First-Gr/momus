@@ -153,7 +153,10 @@ internal sealed class MomusExporter(
     /// </summary>
     private IngestApp App => _app ??= new IngestApp(
         options.AppName is { Length: > 0 } name ? name : Assembly.GetEntryAssembly()?.GetName().Name ?? "app",
-        Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+        BuildFingerprint.Version(
+            Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+            AppContext.BaseDirectory,
+            Assembly.GetEntryAssembly()),
         $"{System.Environment.MachineName}:{System.Environment.ProcessId}",
         options.Environment is { Length: > 0 } env ? env : environment.EnvironmentName);
 

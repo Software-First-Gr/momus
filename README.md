@@ -99,11 +99,21 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
 ```sql
--- SQL Server. VIEW SERVER STATE covers the dm_os_* and dm_exec_* views;
--- on Azure SQL Database, grant VIEW DATABASE STATE in the database instead.
+-- SQL Server. VIEW SERVER STATE covers the dm_os_* and dm_exec_* views; on SQL Server 2022
+-- and later, VIEW SERVER PERFORMANCE STATE is enough and narrower. On Azure SQL Database,
+-- grant VIEW DATABASE STATE in the database instead.
 CREATE LOGIN momus WITH PASSWORD = '…';
 GRANT VIEW SERVER STATE TO momus;
+
+-- In the database the connection string names. Without a user there, the login cannot open
+-- it and no check runs at all. The user needs no permission of its own: Momus never reads a
+-- table.
+USE shop;
+CREATE USER momus FOR LOGIN momus;
 ```
+
+On a server shared with other databases, statements, sessions and blocking are reported for the
+database in the connection string only; waits and page life expectancy are the whole instance's.
 
 Without `pg_stat_statements` Momus says so as an Info finding and keeps running; every other
 check still works.
@@ -167,7 +177,17 @@ What leaves your process, and what never does:
 
 `ShareConnectionStrings` is how the server learns which database to scan without you configuring
 it twice. It sends the connection string of the contexts that ran statements, so leave it off
-unless the Momus server is one you run.
+unless the Momus server is one you run. Without it, the server still puts the application's
+statements beside the database's own: a database it does not know by the application's name for
+it is matched to a scanned target on provider and database name, and the server's log says so once.
+
+A deploy is a version the server has not seen before. The SDK writes the commit into the
+informational version when it can see `.git`, and most Dockerfiles leave `.git` out, so a
+container build reports `1.0.0` after every deploy. When the version names no revision, the client
+appends a build fingerprint — `1.0.0+build.3e45f2a750a8`, a hash of the module id of every
+assembly shipped with the application and of the runtime version. The same source gives the same
+fingerprint, so a restart is not a deploy; any changed project or package gives a new one. To see
+the commit instead, build with `-p:SourceRevisionId=$(git rev-parse HEAD)`.
 
 For work that is not a request, name it yourself:
 
